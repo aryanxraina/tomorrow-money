@@ -4,7 +4,8 @@ import { analyse, planForecast } from '../src/lib/engine/analyse';
 import { TODAY } from '../src/lib/engine/dates';
 import { buildFacts, templates } from '../src/lib/narrative';
 
-const runs: [string, 'en' | 'pl' | 'hi' | 'ur'][] = [['amara', 'en'], ['jordan', 'en'], ['kacper', 'pl'], ['priya', 'en'], ['amara', 'hi'], ['kacper', 'ur']];
+// Live check of on-device narration, needs a running server: npx tsx scripts/check-narration.mts
+const runs: [string, 'en' | 'pl' | 'hi' | 'ur'][] = [['amara', 'en'], ['jordan', 'en'], ['kacper', 'en'], ['priya', 'en'], ['kacper', 'pl']];
 for (const [id, lang] of runs) {
   const p = getPersonas().find((x) => x.id === id)!;
   const an = analyse(p.answers, p.txns, TODAY);

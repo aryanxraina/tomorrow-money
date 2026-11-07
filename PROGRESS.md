@@ -21,7 +21,18 @@ Running log for the hackathon (Sat 7 Nov 2026). Feature freeze 17:45, submission
 - `@qvac/cli` installed globally. Server: `qvac serve --openai -p 11435`, models in `qvac.config.json`.
 - Chat tested with `qwen3-600m` and `qwen3-4b`. OCR tested on both sample receipts. All AI routes tested in `mode: "local"`.
 
+### 14:30 Steps 5 and 6: UX polish and quality pass
+- Added loading states, on-device banner, translated labels, "Why" panels everywhere, stacked receipt rows on phones.
+- `scripts/smoke-ui.mjs` (playwright-core with installed Chrome): every page × every persona + questionnaire + flows + offline, at 390px, checking console errors, 5xx, crash text, `undefined`/`NaN`, overflow and external requests. **All clean with QVAC running and with no AI at all.**
+- Tested with a deliberately invalid cloud key: cloud fails, on-device takes over, and the on-device run made no cloud attempts (4 failures logged, all from the auto run).
+- Note: at 14:24 a commit "Tomorrow: hackathon build" appeared under the user's identity (GitHub Desktop is open) and `origin` was added. It is the user's snapshot of work in progress. History left alone and nothing pushed by this agent.
+
+### 14:55 Step 7: Pitch
+- `PITCH.md` written with figures taken from the engine. README updated.
+
 ## Decisions
+- **Amara's closest recent corner-shop payment now matches the corner-shop sample receipt** (£11.15, 6 Nov). Before this, the "not counted twice" match never fired for any sample on any persona, so it could not be demoed. A new payment moved her risk to 37%, so an existing one was changed instead. Risk stays 34%; premium is now **£417** (was £418) and support **£106/month** (was £107). The brief's "~£418" is close, and `PITCH.md` and the README use the new figures.
+- **What-if shows risky days and lowest balance**, not peak risk. Amara's peak is already 100%, so it read "100% (from 100%)".
 - No `.env.local` was present at the start, so the first test run uses the no-keys rules fallback.
 - **QVAC on port 11435, not 11434.** Ollama already holds 11434 on this machine. `.env.example` now uses 11435.
 - **Default local model is `qwen3-4b`, not `qwen3-600m`.** The 600M model wrote `$` for `£`, echoed English when asked for Polish, and answered "Yes, you can" to a purchase that raised risk from 55% to 84%. It stays in the config for low-end machines, with those limits.

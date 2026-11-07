@@ -43,10 +43,18 @@ export function matchesLanguage(text: string, lang: string): boolean {
   return true;
 }
 
-/** Numbers in the app's own sentence that a rewrite dropped. A rewrite must keep them all. */
+/**
+ * Numbers in the app's own sentence that a rewrite dropped. A rewrite must keep them all,
+ * except small ones, which plain English writes as words ("three months", "four things").
+ */
 export function droppedNumbers(rewrite: string, draft: string): number[] {
   const kept = new Set(numbersIn(rewrite));
-  return numbersIn(draft).filter((n) => !kept.has(n));
+  return numbersIn(draft).filter((n) => n > 12 && !kept.has(n));
+}
+
+/** A rewrite must not change how often money is paid: "£150 one-off" once became "£150 once a year". */
+export function keepsMoneyTerms(rewrite: string, draft: string): boolean {
+  return ['one-off', 'a month', 'a year'].every((term) => !draft.includes(term) || rewrite.includes(term));
 }
 
 /**

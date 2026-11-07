@@ -26,13 +26,17 @@ With **no keys at all** the app still works end to end: AI text falls back to ru
 
 **Local model with QVAC (Tether challenge):**
 
-1. Install the QVAC CLI (see https://docs.qvac.tether.io, CLI → HTTP server): `npm i -g @qvac/cli`
-2. Start the OpenAI-compatible server: `qvac serve openai` (default port 11434)
-3. Set `LOCAL_AI_MODEL` in `.env.local` to the model name the server exposes (e.g. `qwen3-600m`)
+1. Install the QVAC CLI (see https://docs.qvac.tether.io, CLI → HTTP server): `npm i -g @qvac/cli`. On Windows, if `qvac` isn't found, run `%APPDATA%\npm\qvac.cmd`.
+2. From this folder, start the server: `qvac serve --openai -p 11435`. It reads `qvac.config.json` and downloads the models on first run (`qwen3-4b` about 2.5 GB, plus OCR).
+3. Copy `.env.example` to `.env.local`. It already points at port 11435 with `LOCAL_AI_MODEL=qwen3-4b`.
 
-Teammates without QVAC set up yet can use any OpenAI-compatible local server on the same port (for example Ollama with `LOCAL_AI_MODEL=qwen3:1.7b`). Small models don't reliably call tools, so the app never asks them to: the "agent" is deterministic code and the model only fills in text and JSON.
+Use port 11435 if Ollama is holding QVAC's default port, 11434. `qwen3-600m` is also in the config for low-end machines, but in our testing it gave unsafe answers (see `PROGRESS.md`).
 
-**Offline demo:** run the app on your laptop, keep mode on Auto, switch Wi-Fi off. The dot in the header turns amber and every AI badge says "on-device".
+Other OpenAI-compatible servers such as Ollama work for text, but receipt OCR needs QVAC. Small models don't reliably call tools, so the app never asks them to: the "agent" is deterministic code and the model only fills in text and JSON.
+
+**How on-device AI is kept honest:** receipts go through QVAC OCR and then plain code, with the printed total settling misreads. AI text with a number the app didn't supply is rejected. Purchase verdicts come from code. Dashboard narration on-device is English-only, and non-English uses the app's own translated sentences, because small models changed the meaning of money terms in testing. A step whose rewrite is rejected or unchanged shows the rules badge, so expect a mix of badges.
+
+**Offline demo:** run the app on your laptop, keep mode on Auto, switch Wi-Fi off. The dot in the header turns amber and a banner says nothing leaves your device. Start QVAC and the app before going offline, and rehearse this on the demo machine.
 
 ## Other keys (optional)
 
@@ -75,16 +79,21 @@ src/lib/ai/          provider switch (cloud / local / fallback) and prompts
 src/lib/data/        4 demo personas (6 months of synthetic transactions), sample inbox, sample receipts
 src/app/api/         narrate, agent, receipt, subscriptions, places, quote, status
 src/app/*            screens
-scripts/check-engine.ts   npx tsx scripts/check-engine.ts  (prints every persona's results)
+scripts/check-engine.ts   npm run check: prints every persona's results, tests the receipt parser and number guard
+scripts/smoke-api.mjs     hits every API route: node scripts/smoke-api.mjs [baseUrl] [mode]
+scripts/smoke-ui.mjs      browser pass, every page and persona at phone width (uses installed Chrome)
+scripts/check-narration.mts, debug-narration.mts   live on-device narration checks
 ```
 
 ## 3-minute demo
 
-1. **Hook (Amara):** "Low-income households pay hundreds a year more for the same essentials. Amara pays £418 and doesn't know it." → Detect.
-2. **Time travel:** Predict → "34% chance she's below £0 on 6 December." Tap "£400 car repair" to show the risk jump.
+Full scripts for both submissions are in `PITCH.md`. Before demoing, use More → "Delete all my data on this device" so earlier receipts don't change the numbers.
+
+1. **Hook (Amara):** "Low-income households pay hundreds a year more for the same essentials. Amara pays £417 and doesn't know it." → Detect.
+2. **Time travel:** Predict → "34% chance she's below £0 on 6 December, reaching 100% by the 12th." Tap "£400 car repair": risky days go from 25 to 35.
 3. **Support + Plan:** Council Tax Reduction, Healthy Start… Plan shows risky days and safe days improving.
-4. **Snap** the sample receipt → confirm → it matches/tracks. **Pay** at Tesco Express → "Lidl is 6 min away, about £4.80 cheaper."
-5. **Ask:** "Can I afford £60 this week?"
+4. **Snap** the corner-shop sample → it matches her card payment, so it isn't counted twice. **Pay** at Tesco Express → "Lidl is 6 min away, about £4.78 cheaper."
+5. **Ask:** "Can I afford £60 this week?" The verdict comes from code, and the AI explains it.
 6. **Switch persona** (Jordan: tax bill in January; Kacper: Polish + cash fees; Priya: council tax she doesn't owe).
 7. **Turn Wi-Fi off:** same app, on-device AI.
 

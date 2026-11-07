@@ -19,7 +19,7 @@ Rules:
 export function narrateSystem(lang: Lang) {
   return `${CORE}
 You get DRAFT, five correct sentences written by the app, and FACTS for background.
-Lightly reword each DRAFT value so it sounds warm and clear, in ${LANG_NAME[lang]}. Keep its meaning exactly. Each value is at most 2 short sentences.
+Say each DRAFT value again in different words, warm and clear, in ${LANG_NAME[lang]}. Keep its meaning exactly. Keep the phrases "one-off", "a month" and "a year", and all bill and company names, exactly as written. Each value is at most 2 short sentences.
 Keep every number, date and amount from that DRAFT value exactly as written. Do not add any new claim or cause.
 Keep the JSON keys in English. Return ONLY a JSON object:
 {"understand": "...", "detect": "...", "predict": "...", "support": "...", "plan": "..."}`;

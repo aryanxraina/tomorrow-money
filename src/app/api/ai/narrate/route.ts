@@ -1,6 +1,6 @@
 import { aiStatus, ask, extractJson, readBody, safeMode, type Mode } from '@/lib/ai/provider';
 import { narrateSystem } from '@/lib/ai/prompts';
-import { droppedNumbers, inventedNumbers, matchesLanguage, poundsOnly } from '@/lib/ai/guard';
+import { droppedNumbers, inventedNumbers, keepsMoneyTerms, matchesLanguage, poundsOnly } from '@/lib/ai/guard';
 import type { Lang } from '@/lib/types';
 
 const KEYS = ['understand', 'detect', 'predict', 'support', 'plan'] as const;
@@ -30,7 +30,8 @@ export async function POST(req: Request) {
     for (const k of KEYS) {
       const v = typeof raw[k] === 'string' ? poundsOnly((raw[k] as string).trim()) : '';
       // An unchanged copy isn't AI writing, so it keeps the rules badge rather than claiming to be AI.
-      const ok = v && v !== draft[k]?.trim() && matchesLanguage(v, lang) && !inventedNumbers(v, facts, draft).length && !droppedNumbers(v, draft[k] || '').length;
+      const d = draft[k] || '';
+      const ok = v && v !== d.trim() && matchesLanguage(v, lang) && !inventedNumbers(v, facts, draft).length && !droppedNumbers(v, d).length && (lang !== 'en' || keepsMoneyTerms(v, d));
       if (ok) texts[k] = v;
       else rejected.push(k);
     }

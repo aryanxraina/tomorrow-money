@@ -141,6 +141,13 @@ function amara(): Persona {
     { name: 'Bananas', qty: 1, basePrice: 0.95 },
     { name: 'Cheddar 400g', qty: 1, basePrice: 2.89 },
   ];
+  // Make her closest recent corner-shop payment match the sample receipt, so the demo can show a
+  // receipt attaching to a bank payment instead of being counted twice. Reuses an existing payment,
+  // so her totals and forecast stay almost unchanged.
+  const shopPayment = b.txns
+    .filter((t) => t.description === 'TESCO EXPRESS' && t.date >= '2026-10-25')
+    .sort((a, b) => Math.abs(a.amount + 11.15) - Math.abs(b.amount + 11.15))[0];
+  if (shopPayment) Object.assign(shopPayment, { date: '2026-11-06', amount: -11.15, description: 'QUICKSTOP EXPRESS' });
   return {
     id: 'amara',
     name: 'Amara',
