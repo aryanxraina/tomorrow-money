@@ -185,10 +185,11 @@ export default function Snap() {
           </div>
           <div className="space-y-2">
             {rec.items.map((it, i) => (
-              <div key={i} className="grid grid-cols-[1fr_56px_84px_28px] gap-2">
-                <input className={inputCls} value={it.name} placeholder="Item" onChange={(e) => setRec({ ...rec, items: rec.items.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} />
-                <input type="number" className={inputCls} value={it.qty} onChange={(e) => setRec({ ...rec, items: rec.items.map((x, j) => (j === i ? { ...x, qty: Number(e.target.value) } : x)) })} />
+              <div key={i} className="grid grid-cols-[64px_1fr_28px] gap-2 border-b border-slate-100 pb-2 sm:grid-cols-[1fr_64px_96px_28px] sm:border-0 sm:pb-0">
+                <input aria-label="Item" className={`${inputCls} col-span-3 sm:col-span-1`} value={it.name} placeholder="Item" onChange={(e) => setRec({ ...rec, items: rec.items.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} />
+                <input aria-label="Quantity" type="number" className={inputCls} value={it.qty} onChange={(e) => setRec({ ...rec, items: rec.items.map((x, j) => (j === i ? { ...x, qty: Number(e.target.value) } : x)) })} />
                 <input
+                  aria-label="Price"
                   type="number"
                   step="0.01"
                   className={inputCls}

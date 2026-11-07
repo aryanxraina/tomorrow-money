@@ -23,6 +23,8 @@ async function session(name, seed) {
   page.on('console', (m) => m.type() === 'error' && note('console', m.text()));
   page.on('pageerror', (e) => note('pageerror', e.message));
   page.on('response', (r) => r.status() >= 500 && note('http', `${r.status()} ${r.url()}`));
+  // Privacy: with no keys set the browser must never talk to anything except this app.
+  page.on('request', (r) => new URL(r.url()).hostname !== new URL(base).hostname && !r.url().startsWith('data:') && note('external request', r.url()));
   await page.goto(base + '/');
   if (seed) await page.evaluate((s) => localStorage.setItem('tomorrow-money-v1', JSON.stringify({ state: s, version: 0 })), seed);
 
@@ -44,7 +46,8 @@ async function session(name, seed) {
     await snap(path.slice(1));
     if (path === '/dashboard') {
       for (const s of STEPS) {
-        await page.getByRole('button', { name: new RegExp(`^\\d?\\s*${s}$`) }).first().click();
+        // By position, because the labels are translated for personas who use another language.
+        await page.locator('main button:has(span.h-5.w-5)').nth(STEPS.indexOf(s)).click();
         await page.waitForTimeout(250);
         await check(`/dashboard#${s}`);
         await snap(`dashboard-${s}`);
@@ -102,7 +105,7 @@ for (const id of PERSONAS) {
   await page.goto(base + '/dashboard');
   await page.getByRole('button', { name: /Predict$/ }).first().click();
   await page.getByRole('button', { name: /£400 car repair/ }).click();
-  await page.getByText(/highest risk becomes/).waitFor();
+  await page.getByText(/risky days go from/).waitFor();
   await check('/dashboard what-if');
 
   setWhere('rtl');
@@ -143,6 +146,20 @@ for (const id of PERSONAS) {
   errs.forEach((e) => problems.push(`questionnaire ${String(e).slice(0, 300)}`));
   await ctx.close();
   console.log('done questionnaire');
+}
+
+// Offline: Auto mode must switch to on-device and say so.
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.addInitScript(() => Object.defineProperty(navigator, 'onLine', { get: () => false }));
+  await page.goto(base + '/');
+  await page.evaluate(() => localStorage.setItem('tomorrow-money-v1', JSON.stringify({ state: { profileId: 'amara', mode: 'auto' }, version: 0 })));
+  await page.goto(base + '/dashboard');
+  await page.getByText('On-device mode: nothing leaves your device').waitFor({ timeout: 10000 }).catch(() => problems.push('offline: banner not shown'));
+  if (shots) await page.screenshot({ path: `${shots}/offline-dashboard.png` });
+  await ctx.close();
+  console.log('done offline');
 }
 
 await browser.close();

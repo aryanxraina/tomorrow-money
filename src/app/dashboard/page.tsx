@@ -109,12 +109,12 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-          <Stat label="Balance" value={gbp(an.balance)} />
+          <Stat label={t(lang, 'balance')} value={gbp(an.balance)} />
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-white p-3 ring-1 ring-black/5">
-          <Stat label={`${t(lang, 'safeDays')} now`} value={sdNow} tone={sdNow < 14 ? 'red' : 'slate'} />
-          <Stat label="In 90 days" value={sdBase} sub="if nothing changes" tone={sdBase < sdNow ? 'red' : 'slate'} />
-          <Stat label="With your plan" value={sdPlan} sub="in 90 days" tone="green" />
+          <Stat label={`${t(lang, 'safeDays')} ${t(lang, 'now')}`} value={sdNow} tone={sdNow < 14 ? 'red' : 'slate'} />
+          <Stat label={t(lang, 'in90')} value={sdBase} sub={t(lang, 'ifNothing')} tone={sdBase < sdNow ? 'red' : 'slate'} />
+          <Stat label={t(lang, 'withPlan')} value={sdPlan} sub={t(lang, 'in90')} tone="green" />
         </div>
         <Muted className="mt-2">{t(lang, 'safeDaysHint')}.</Muted>
         <Why>
@@ -231,18 +231,20 @@ export default function Dashboard() {
                 </div>
               ) : null}
               <p className="mt-2 text-sm text-violet-800">Fix: {p.fix}</p>
-              {p.evidence.length > 0 && (
-                <Why>
-                  {p.evidence.slice(-6).map((e) => (
+              <Why>
+                {p.evidence.length > 0 ? (
+                  p.evidence.slice(-6).map((e) => (
                     <div key={e.id} className="flex justify-between">
                       <span>
                         {shortDate(e.date)} · {e.description}
                       </span>
                       <span>{gbp(e.amount, 2)}</span>
                     </div>
-                  ))}
-                </Why>
-              )}
+                  ))
+                ) : (
+                  <p>The app’s code worked this out from your balance, your answers and the last 13 weeks of spending. No AI was involved.</p>
+                )}
+              </Why>
             </Card>
           ))}
         </div>
@@ -297,7 +299,8 @@ export default function Dashboard() {
               </div>
               {shocked && (
                 <p className="mt-2 text-sm">
-                  With “{shock?.label}”, the highest risk becomes <b className="text-rose-700">{Math.round(shocked.maxRisk.p * 100)}%</b> (from {Math.round(f.maxRisk.p * 100)}%).
+                  With “{shock?.label}”, risky days go from {riskyDays(f)} to <b className="text-rose-700">{riskyDays(shocked)}</b>, and your lowest likely balance goes from {gbp(f.lowestP50.value)} to{' '}
+                  <b className="text-rose-700">{gbp(shocked.lowestP50.value)}</b>.
                 </p>
               )}
             </div>
@@ -374,6 +377,10 @@ export default function Dashboard() {
                   <span className="text-sm text-slate-500">{s.linkLabel}</span>
                 )}
               </div>
+              <Why>
+                <p>The app’s rules matched this to your answers and spending. It means you are likely to qualify, not that you definitely will.</p>
+                {(s.estMonthly || s.oneOff) && <p>The amount is an estimate. Only the official check can confirm it.</p>}
+              </Why>
             </Card>
           ))}
           {!an.support.length && <Card>No extra support found right now.</Card>}
@@ -422,6 +429,10 @@ export default function Dashboard() {
                     </a>
                   )}
                 </label>
+                <Why>
+                  <p>Steps are ranked by how much they save for the effort they take. Ticking or unticking one re-runs your forecast above.</p>
+                  {a.saveMonthly > 0 && <p>The saving is an estimate worked out by the app’s code.</p>}
+                </Why>
               </Card>
             );
           })}
@@ -437,7 +448,7 @@ export default function Dashboard() {
       <div className="flex justify-end">
         {step !== 'plan' && (
           <Button onClick={() => setStep(STEPS[STEPS.indexOf(step) + 1])}>
-            Next: {t(lang, STEPS[STEPS.indexOf(step) + 1])} →
+            {t(lang, 'next')}: {t(lang, STEPS[STEPS.indexOf(step) + 1])} →
           </Button>
         )}
       </div>

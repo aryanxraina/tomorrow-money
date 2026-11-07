@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { getPersona } from './data/personas';
 import { analyse, estimateFromAnswers } from './engine/analyse';
 import { TODAY } from './engine/dates';
+import { t } from './i18n';
 import { useStore, type Mode } from './store';
 import type { Answers, BasketItem, Lang, Txn } from './types';
 
@@ -77,6 +78,12 @@ export function useAnalysis(profile: Profile | null) {
 export function useLang(profile?: Profile | null): Lang {
   const lang = useStore((s) => s.lang);
   return lang ?? profile?.answers.language ?? 'en';
+}
+
+/** Translator for the current profile's language, for shared components. */
+export function useT() {
+  const lang = useLang(useProfile());
+  return (key: string) => t(lang, key);
 }
 
 const subscribeOnline = (cb: () => void) => {

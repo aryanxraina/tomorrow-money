@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { useT } from '@/lib/hooks';
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <div className={`rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 ${className}`}>{children}</div>;
@@ -58,11 +59,12 @@ export type Used = 'cloud' | 'local' | 'rules';
 
 /** Glass-box label: shows who wrote a sentence. */
 export function AiBadge({ used, model }: { used?: Used | null; model?: string }) {
+  const tr = useT();
   if (!used) return null;
   const map = {
-    cloud: { tone: 'blue' as const, text: 'Written by cloud AI' },
-    local: { tone: 'green' as const, text: 'Written by on-device AI' },
-    rules: { tone: 'slate' as const, text: 'Written by app rules (no AI)' },
+    cloud: { tone: 'blue' as const, text: tr('byCloud') },
+    local: { tone: 'green' as const, text: tr('byLocal') },
+    rules: { tone: 'slate' as const, text: tr('byRules') },
   };
   const m = map[used];
   return (
@@ -83,14 +85,16 @@ export function AiWriting({ mode, what = 'AI is writing' }: { mode?: 'auto' | 'c
 }
 
 export function CodeBadge() {
-  return <Pill tone="violet">Computed by code</Pill>;
+  const tr = useT();
+  return <Pill tone="violet">{tr('byCode')}</Pill>;
 }
 
 /** "Why am I seeing this?": evidence and assumptions behind an insight. */
-export function Why({ children, label = 'Why am I seeing this?' }: { children: ReactNode; label?: string }) {
+export function Why({ children, label }: { children: ReactNode; label?: string }) {
+  const tr = useT();
   return (
     <details className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
-      <summary className="cursor-pointer select-none font-medium text-violet-700">{label}</summary>
+      <summary className="cursor-pointer select-none font-medium text-violet-700">{label ?? tr('why')}</summary>
       <div className="mt-2 space-y-1">{children}</div>
     </details>
   );

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { SimChart } from '@/components/charts';
-import { Card, Muted, Pill } from '@/components/ui';
+import { Card, Muted, Pill, Why } from '@/components/ui';
 import { gbp } from '@/lib/engine/dates';
 import { investReadiness, simulateInvesting } from '@/lib/engine/invest';
 import { useAnalysis, useProfile } from '@/lib/hooks';
@@ -58,6 +58,9 @@ export default function Invest() {
           ))}
         </ul>
         {!ready.ready && <p className="mt-2 text-sm text-violet-800">Follow your plan first. You can still explore the simulator below.</p>}
+        <Why>
+          <p>The app’s code runs these four checks on your own numbers. They are a general rule of thumb, not personal investment advice.</p>
+        </Why>
       </Card>
 
       <Card>
