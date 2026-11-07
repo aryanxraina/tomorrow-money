@@ -1,0 +1,18 @@
+{
+  "name": "tomorrow-p2p",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared-house bill ledger for Tomorrow: no server, built on Pears modules",
+  "scripts": {
+    "demo": "node demo.mjs",
+    "test": "node test.mjs"
+  },
+  "dependencies": {
+    "autobase": "^7.28.2",
+    "b4a": "^1.9.0",
+    "corestore": "^7.16.1",
+    "hyperdht": "^6.36.0",
+    "hyperswarm": "^4.17.2"
+  }
+}

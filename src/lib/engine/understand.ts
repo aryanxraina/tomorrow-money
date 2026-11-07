@@ -65,6 +65,40 @@ export function summarise(txns: Txn[], today: string, answers: Answers): Summary
   };
 }
 
+export interface CategoryTrend {
+  category: Category;
+  months: { month: string; amount: number }[];
+  /** Change from the month before last to the last full month, in %. Null if there's nothing to compare. */
+  changePct: number | null;
+}
+
+/** Spending per full calendar month for the biggest categories. The current part-month is left out. */
+export function categoryTrends(txns: Txn[], today: string, top = 4, maxMonths = 6): CategoryTrend[] {
+  const thisMonth = today.slice(0, 7);
+  const totals = new Map<Category, Map<string, number>>();
+  const seen = new Set<string>();
+  for (const t of txns) {
+    const month = t.date.slice(0, 7);
+    if (t.source === 'receipt' || t.amount >= 0 || month >= thisMonth) continue;
+    seen.add(month);
+    const byMonth = totals.get(t.category) ?? new Map<string, number>();
+    byMonth.set(month, (byMonth.get(month) || 0) - t.amount);
+    totals.set(t.category, byMonth);
+  }
+  // The first month of history is often partial, so it is dropped when there's enough to compare.
+  const all = [...seen].sort();
+  const months = (all.length > 2 ? all.slice(1) : all).slice(-maxMonths);
+  const sumOf = (m: Map<string, number>) => months.reduce((s, x) => s + (m.get(x) || 0), 0);
+  return [...totals.entries()]
+    .sort((a, b) => sumOf(b[1]) - sumOf(a[1]))
+    .slice(0, top)
+    .map(([category, byMonth]) => {
+      const series = months.map((month) => ({ month, amount: Math.round(byMonth.get(month) || 0) }));
+      const [prev, last] = [series.at(-2)?.amount, series.at(-1)?.amount];
+      return { category, months: series, changePct: prev && last !== undefined ? Math.round(((last - prev) / prev) * 100) : null };
+    });
+}
+
 export interface FingerprintDim {
   id: string;
   label: string;

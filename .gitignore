@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+/src/p2p/node_modules
+/src/p2p/.house-*
 /.pnp
 .pnp.*
 .yarn/*

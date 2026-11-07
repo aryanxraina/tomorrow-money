@@ -2,6 +2,8 @@
 
 import {
   Area,
+  Bar,
+  BarChart,
   CartesianGrid,
   ComposedChart,
   Line,
@@ -17,7 +19,7 @@ import {
 } from 'recharts';
 import { gbp, shortDate } from '@/lib/engine/dates';
 import type { Forecast } from '@/lib/engine/forecast';
-import type { FingerprintDim } from '@/lib/engine/understand';
+import type { CategoryTrend, FingerprintDim } from '@/lib/engine/understand';
 import type { SimYear } from '@/lib/engine/invest';
 
 export function ForecastChart({ base, plan, height = 240 }: { base: Forecast; plan?: Forecast | null; height?: number }) {
@@ -49,6 +51,34 @@ export function ForecastChart({ base, plan, height = 240 }: { base: Forecast; pl
           {plan && <Line dataKey="plan" stroke="#059669" strokeWidth={2.5} strokeDasharray="6 3" dot={false} isAnimationActive={false} />}
         </ComposedChart>
       </ResponsiveContainer>
+    </div>
+  );
+}
+
+const monthName = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' });
+
+/** One small chart per category, so four trends stay readable on a phone without colour coding. */
+export function CategoryTrendChart({ label, trend }: { label: string; trend: CategoryTrend }) {
+  const data = trend.months.map((m) => ({ name: monthName(m.month), amount: m.amount }));
+  const last = trend.months.at(-1)?.amount ?? 0;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2 text-sm">
+        <span className="font-medium">{label}</span>
+        <span className="text-slate-600">
+          {gbp(last)}
+          {trend.changePct !== null && <span className="ml-1 text-xs">({trend.changePct > 0 ? '+' : ''}{trend.changePct}%)</span>}
+        </span>
+      </div>
+      <div style={{ height: 72 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }} barCategoryGap={6}>
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} interval={0} height={16} />
+            <Tooltip cursor={{ fill: '#f1f5f9' }} formatter={(v) => [gbp(v as number), label]} />
+            <Bar dataKey="amount" fill="#6d28d9" radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

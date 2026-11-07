@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { FingerprintRadar, ForecastChart } from '@/components/charts';
+import { CategoryTrendChart, FingerprintRadar, ForecastChart } from '@/components/charts';
 import { AiBadge, AiWriting, Button, Card, CodeBadge, Muted, Pill, Severity, Stat, Why, type Used } from '@/components/ui';
 import { planForecast, safeDays, whatIf } from '@/lib/engine/analyse';
 import { CATEGORY_LABEL, ESSENTIAL } from '@/lib/engine/categorise';
 import { addDays, gbp, niceDate, shortDate } from '@/lib/engine/dates';
 import { cadenceLabel } from '@/lib/engine/recurring';
+import { categoryTrends } from '@/lib/engine/understand';
+import { billsToIcs, downloadIcs } from '@/lib/ics';
 import { postJSON, useAnalysis, useEffectiveMode, useLang, useProfile } from '@/lib/hooks';
 import { isRtl, t } from '@/lib/i18n';
 import { buildFacts, templates, type StepKey } from '@/lib/narrative';
@@ -41,6 +43,7 @@ export default function Dashboard() {
   }, [an, shock]);
   const facts = useMemo(() => (profile && an && plan ? buildFacts(profile, an, plan, selectedActions.map((a) => a.title)) : null), [profile, an, plan, selectedActions]);
   const rules = useMemo(() => (facts ? templates(facts, lang) : null), [facts, lang]);
+  const trends = useMemo(() => (profile && an ? categoryTrends(profile.txns, an.today) : []), [profile, an]);
 
   const narrationKey = profile ? `${profile.id}|${mode}|${lang}|${selectedIds.join(',')}|${profile.txns.length}` : '';
   const narr = narrationCache.get(narrationKey) ?? null;
@@ -181,6 +184,35 @@ export default function Dashboard() {
               <p className="pt-1 text-xs">Averages use the last 13 weeks. Categories come from rules first; AI only handles what rules can’t place.</p>
             </Why>
           </Card>
+          {trends.length > 0 && trends[0].months.length > 1 && (
+            <Card>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-semibold">How your spending is changing</h3>
+                <CodeBadge />
+              </div>
+              <Muted>Your biggest categories, month by month. The figure is the last full month.</Muted>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {trends.map((tr) => (
+                  <CategoryTrendChart key={tr.category} label={CATEGORY_LABEL[tr.category]} trend={tr} />
+                ))}
+              </div>
+              <Why>
+                <p>Added up from your transactions, by calendar month. This month is left out because it isn’t finished.</p>
+                <table className="mt-1 w-full text-xs">
+                  <tbody>
+                    {trends.map((tr) => (
+                      <tr key={tr.category}>
+                        <th scope="row" className="py-0.5 text-left font-medium">
+                          {CATEGORY_LABEL[tr.category]}
+                        </th>
+                        <td className="py-0.5 text-right">{tr.months.map((m) => gbp(m.amount)).join(' · ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Why>
+            </Card>
+          )}
           <Card>
             <h3 className="font-semibold">Your Money Fingerprint</h3>
             <Muted>Six strengths, scored 0–100. Higher is stronger. This is for you only and is never used for credit or pricing.</Muted>
@@ -311,7 +343,19 @@ export default function Dashboard() {
             </Why>
           </Card>
           <Card>
-            <h3 className="font-semibold">Coming up</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-semibold">Coming up</h3>
+              <Button
+                variant="soft"
+                className="!px-3 !py-1.5"
+                onClick={() => {
+                  const bills = an.upcoming.filter((u) => u.amount <= -30);
+                  downloadIcs(billsToIcs(bills, `${an.today.replace(/-/g, '')}T090000Z`), 'tomorrow-bills.ics');
+                }}
+              >
+                📅 Add to calendar
+              </Button>
+            </div>
             <div className="mt-2 divide-y divide-slate-100">
               {an.upcoming.filter((u) => u.amount > 0 || u.amount <= -30).slice(0, 12).map((u, i) => (
                 <div key={i} className="flex justify-between py-1.5 text-sm">

@@ -97,10 +97,10 @@ Amara's plan is not a magic fix: her peak risk only falls to 85%. Say that if as
 - So code decides, and the model explains
 - Guards reject invented numbers, wrong language and changed payment terms, then fall back to labelled app wording
 
-**5. Peer-to-peer next step: Pears**
-- Shared-house bill ledger and community price board with no central server
-- See "P2P status" below for exactly what exists today
-- Next: package with Pear and call `@qvac/sdk` directly
+**5. Peer-to-peer with Pears: bills with no server**
+- Working shared-house ledger: Hyperswarm finds housemates, Autobase merges their logs
+- Add bills offline on two devices, reconnect, and they agree to the penny
+- Next: package on the Pear runtime, call `@qvac/sdk` directly, add a community price board
 
 ## 3-minute script
 
@@ -112,7 +112,7 @@ Amara's plan is not a magic fix: her peak risk only falls to 85%. Say that if as
 
 **1:50 QVAC: receipts.** Snap → supermarket sample. "QVAC OCR reads this on the device. It misread £3.49 as 13.49, which would be a £10 error. Our parser catches it because the lines have to add up to the printed total." Point at £22.95.
 
-**2:25 Pears.** Show the P2P demo (see below). "Housemates share bills directly, device to device, with no server in the middle."
+**2:25 Pears.** Two windows, Ana and Ben, already open. Press "Go offline" on both, then add a bill on each. Press "Reconnect" on both. "Housemates share bills directly, with no server in the middle. They were apart, and now they agree to the penny. Pears modules running on Node, as two separate processes on this laptop."
 
 **2:50 Close.** "Private by design, useful offline, and honest about what a small model can and can't do."
 
@@ -122,13 +122,17 @@ Amara's plan is not a magic fix: her peak risk only falls to 85%. Say that if as
 | --- | --- |
 | Problem & impact | Students, new arrivals and shift workers; council tax case; privacy as a real barrier |
 | QVAC implementation | Chat and OCR through QVAC, `qvac.config.json`, reasoning control, queue and health check, guards |
-| Pears implementation | See "P2P status" below |
+| Pears implementation | Hyperswarm, Corestore and Autobase ledger; offline merge shown live. See "P2P status" for its limits |
 | Technical architecture | Pure engine, one provider switch, `ask()` enforces on-device, rules fallback on every AI call |
 | Creativity, design & presentation | Safe days, Wi-Fi-off moment, OCR error caught by arithmetic |
 
 ## P2P status
 
-Not built yet. Update this section after work plan step 8(c). Do not claim P2P works until it does.
+**Works today:** a shared-house bill ledger in `src/p2p`, using Hyperswarm, Corestore and Autobase. Two separate processes sync through a local DHT, with no internet. Bills added while offline merge on reconnect, and both sides agree to the penny. Tested by `npm test` and by driving the pages in a browser.
+
+**Say this plainly if asked:** it runs on Node with Pears modules, not on the Pear runtime. It is a separate demo, not yet connected to the main app's screens. It has only been run on one machine, not across two devices. It isn't ready for real use: no encryption at rest and no approval step for bills (see `src/p2p/README.md`).
+
+**To demo:** before going on stage, run `cd src/p2p && npm run demo` and open the two links side by side.
 
 ---
 

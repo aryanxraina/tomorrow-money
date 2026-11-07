@@ -2,6 +2,9 @@ import { getPersonas } from '../src/lib/data/personas';
 import { analyse, planForecast, safeDays, affordability } from '../src/lib/engine/analyse';
 import { TODAY } from '../src/lib/engine/dates';
 import { parseReceiptText } from '../src/lib/engine/receipt';
+import { categoryTrends } from '../src/lib/engine/understand';
+import { billsToIcs } from '../src/lib/ics';
+import { moderationProblem } from '../src/lib/moderate';
 import { inventedNumbers } from '../src/lib/ai/guard';
 import { extractJson } from '../src/lib/ai/provider';
 for (const p of getPersonas()) {
@@ -47,4 +50,24 @@ expect('no prices: returns null', parseReceiptText('Hello\nNo  prices  here') ==
 expect('guard: invented number caught', inventedNumbers('You pay £999 a year.', { x: 418 }).join() === '999');
 expect('guard: supplied numbers pass', inventedNumbers('You pay £418 a year, 34% on 6 Dec, about £1,770.', { a: 418, b: '34%', c: '6 Dec', d: 1770 }).length === 0);
 expect('guard: Hindi digits read', inventedNumbers('₹ ९९९', { a: 1 }).join() === '999');
+for (const [text, blocked] of [
+  ['The Post Office lets you take out cash with no fee.', false],
+  ['Council tax was £109 a month, now £55 after my claim on 12 December.', false],
+  ['My card is 4111 1111 1111 1111', true],
+  ['Sort code 12-34-56', true],
+  ['Call me on 07700 900123', true],
+  ['Email me at someone@example.com', true],
+  ['I live near LS9 8AB', true],
+  ['I can lend you money, no credit check', true],
+  ['Guaranteed returns, double your money!', true],
+] as const) {
+  expect(`moderate: ${blocked ? 'blocks' : 'allows'} "${text}"`, !!moderationProblem(text) === blocked);
+}
+const ics = billsToIcs([{ date: '2026-12-31', label: 'Rent, flat; 2', amount: -575 }], '20261107T090000Z');
+expect('ics: all-day, escaped, ends next year, CRLF', ics.includes('DTSTART;VALUE=DATE:20261231') && ics.includes('DTEND;VALUE=DATE:20270101') && ics.includes('Rent\\, flat\\; 2') && ics.includes('\r\n'));
+for (const p of getPersonas()) {
+  const tr = categoryTrends(p.txns, TODAY);
+  console.log(`trend ${p.name}: ${tr.map((t) => `${t.category} ${t.months.map((m) => m.amount).join('/')}`).join(' | ')}`);
+  expect(`trend ${p.name}: no current month, up to 6 full months`, tr.length > 0 && tr.every((t) => t.months.length <= 6 && t.months.every((m) => m.month < '2026-11')));
+}
 expect('json: chatter around JSON', extractJson<{ a: number }>('Sure {not json} here: {"a": 1,} done')?.a === 1);

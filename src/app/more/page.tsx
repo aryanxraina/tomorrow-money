@@ -9,6 +9,7 @@ import { useStore } from '@/lib/store';
 const LINKS = [
   { href: '/subscriptions', title: 'Subscriptions', desc: 'Find renewals, trials and price rises in your inbox' },
   { href: '/invest', title: 'Invest (when ready)', desc: 'Readiness check, time-travel simulator, share prices' },
+  { href: '/circle', title: 'Money Circle (preview)', desc: 'People in a similar spot, sharing what helped. Sample posts for now' },
   { href: '/onboarding', title: 'Redo my check-in', desc: 'Update your answers or upload a bank statement' },
   { href: '/', title: 'Switch person', desc: 'Try another demo person' },
 ];

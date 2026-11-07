@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core';
 const base = process.argv[2] || 'http://localhost:3000';
 const shots = process.argv[3];
 if (shots) mkdirSync(shots, { recursive: true });
-const PAGES = ['/dashboard', '/snap', '/pay', '/ask', '/more', '/subscriptions', '/invest'];
+const PAGES = ['/dashboard', '/snap', '/pay', '/ask', '/more', '/subscriptions', '/invest', '/circle'];
 const PERSONAS = ['amara', 'jordan', 'kacper', 'priya'];
 const STEPS = ['Understand', 'Detect', 'Predict', 'Support', 'Plan'];
 
@@ -107,6 +107,23 @@ for (const id of PERSONAS) {
   await page.getByRole('button', { name: /£400 car repair/ }).click();
   await page.getByText(/risky days go from/).waitFor();
   await check('/dashboard what-if');
+
+  setWhere('/circle flow');
+  await page.goto(base + '/circle');
+  await page.getByLabel('Share what helped you').fill('My card is 4111 1111 1111 1111');
+  await page.getByRole('button', { name: 'Check and add' }).click();
+  await page.getByText(/looks like a card number/).waitFor({ timeout: 5000 });
+  await page.getByLabel('Share what helped you').fill('The food bank near me was kind and did not judge.');
+  await page.getByRole('button', { name: 'Check and add' }).click();
+  await page.getByText('Only on this screen').waitFor();
+  await check('/circle post');
+  await snap('circle');
+
+  setWhere('/dashboard calendar');
+  await page.goto(base + '/dashboard');
+  await page.getByRole('button', { name: /Predict$/ }).first().click();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Add to calendar/ }).click()]);
+  if (download.suggestedFilename() !== 'tomorrow-bills.ics') note('calendar', download.suggestedFilename());
 
   setWhere('rtl');
   await page.getByLabel('Language').selectOption('ur');
