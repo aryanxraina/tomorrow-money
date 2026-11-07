@@ -66,7 +66,7 @@ Before each demo: More → "Delete all my data on this device". An unmatched rec
 
 ### Repo state
 
-Commits are local only, as the brief says never to push. `origin/main` is at the user's own `08f97dc`, so pushing is the user's call. The brief's `qvac serve openai` command is deprecated: use the README's.
+This agent never ran `git push`, as the brief says. But `origin/main` has been updated by pushes from this machine a few minutes after most commits, most likely through GitHub Desktop, so assume commits here reach `github.com/aryanxraina/tomorrow-money`. Tracked files were scanned for API keys and none were found, and `.env.local` is ignored. The brief's `qvac serve openai` command is deprecated: use the README's.
 
 ## Log
 
