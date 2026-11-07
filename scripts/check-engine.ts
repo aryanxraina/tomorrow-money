@@ -7,6 +7,9 @@ import { billsToIcs } from '../src/lib/ics';
 import { moderationProblem } from '../src/lib/moderate';
 import { inventedNumbers } from '../src/lib/ai/guard';
 import { extractJson } from '../src/lib/ai/provider';
+import { buildPulse, classify, cleanText, topicsForUser } from '../src/lib/community/topics';
+import { SAMPLE_COMMUNITY_POSTS } from '../src/lib/data/community';
+import { htmlToText, parseAtom } from '../src/lib/community/reddit';
 for (const p of getPersonas()) {
   const t0 = Date.now();
   const an = analyse(p.answers, p.txns, TODAY);
@@ -71,3 +74,27 @@ for (const p of getPersonas()) {
   expect(`trend ${p.name}: no current month, up to 6 full months`, tr.length > 0 && tr.every((t) => t.months.length <= 6 && t.months.every((m) => m.month < '2026-11')));
 }
 expect('json: chatter around JSON', extractJson<{ a: number }>('Sure {not json} here: {"a": 1,} done')?.a === 1);
+
+// ---- Community Pulse: topic rules, privacy cleaning, counts ----
+console.log('\n=== Community Pulse');
+expect('topics: prepayment meter -> energy', classify('Prepayment meter eating £15 a week').includes('energy'));
+expect('topics: overdraft + credit card -> debt', classify('Overdraft and credit card debt').join() === 'debt');
+expect('topics: rent arrears -> rent', classify('Rent arrears letter from my landlord').includes('rent'));
+expect('topics: unrelated -> none', classify('What is the best ISA for my holiday?').length === 0);
+expect('clean: email, phone, postcode, user, link removed', cleanText('Mail a@b.com or 07700 900123, LS9 8AB, ask u/someone https://x.y/z', 200) === 'Mail [email] or [phone], [postcode], ask [user] [link]');
+expect('clean: long text cut', cleanText('a'.repeat(50), 10).length === 10);
+expect('samples: every post has a topic', SAMPLE_COMMUNITY_POSTS.every((p) => p.topics.length > 0));
+const pulse = buildPulse(SAMPLE_COMMUNITY_POSTS, TODAY);
+console.log(`pulse: ${pulse.total} posts; ${pulse.topics.map((t) => `${t.label} ${t.share}% (${t.change30 >= 0 ? '+' : ''}${t.change30})`).join(' | ')}`);
+expect('pulse: 6 months, counts add up', pulse.months.length === 6 && pulse.topics.every((t) => t.posts === SAMPLE_COMMUNITY_POSTS.filter((p) => p.topics.includes(t.id)).length));
+for (const p of getPersonas()) {
+  const an = analyse(p.answers, p.txns, TODAY);
+  console.log(`for you ${p.name}: ${topicsForUser(an.problems, an.groups.map((g) => g.id)).join(', ')}`);
+}
+
+// Reddit feed reader: an entry in the exact format Reddit's RSS returns (made-up text).
+const feed = `<feed><entry><author><name>/u/Some_User_12</name><uri>https://www.reddit.com/user/Some_User_12</uri></author><category term="UKPersonalFinance" label="r/UKPersonalFinance"/><content type="html">&lt;!-- SC_OFF --&gt;&lt;div class=&quot;md&quot;&gt;&lt;p&gt;Energy &amp;amp; rent are up. I&amp;#39;m stuck.&lt;br/&gt; Any tips?&lt;/p&gt; &lt;/div&gt;&lt;!-- SC_ON --&gt; &amp;#32; submitted by &amp;#32; &lt;a href=&quot;https://www.reddit.com/user/Some_User_12&quot;&gt; /u/Some_User_12 &lt;/a&gt; &lt;br/&gt; &lt;span&gt;&lt;a href=&quot;x&quot;&gt;[link]&lt;/a&gt;&lt;/span&gt;</content><id>t3_abc123</id><link href="https://www.reddit.com/r/UKPersonalFinance/comments/abc123/x/" /><updated>2026-05-06T10:37:41+00:00</updated><published>2026-05-06T10:37:41+00:00</published><title>Bills &amp;amp; rent help</title></entry></feed>`;
+const [entry] = parseAtom(feed);
+expect('feed: id, author, community, time, link', entry?.id === 't3_abc123' && entry.author === 'Some_User_12' && entry.community === 'r/UKPersonalFinance' && entry.postedAt === '2026-05-06T10:37:41+00:00' && entry.url.endsWith('/abc123/x/'));
+expect('feed: title decoded', entry?.title === 'Bills & rent help');
+expect('feed: body text without footer', htmlToText(entry?.html ?? '') === "Energy & rent are up. I'm stuck.\n Any tips?");

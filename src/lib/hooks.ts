@@ -135,6 +135,8 @@ export interface AiStatus {
   localUp: boolean;
   google: boolean;
   finnhub: boolean;
+  /** How Community Pulse reads Reddit: official API, public feeds, or off. */
+  reddit: 'api' | 'rss' | null;
 }
 
 export function useAiStatus() {

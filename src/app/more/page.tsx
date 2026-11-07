@@ -9,6 +9,7 @@ import { useStore } from '@/lib/store';
 const LINKS = [
   { href: '/subscriptions', title: 'Subscriptions', desc: 'Find renewals, trials and price rises in your inbox' },
   { href: '/invest', title: 'Invest (when ready)', desc: 'Readiness check, time-travel simulator, share prices' },
+  { href: '/community', title: 'Community Pulse', desc: 'Money problems people are talking about on Reddit, trends over time, and where to get help' },
   { href: '/circle', title: 'Money Circle (preview)', desc: 'People in a similar spot, sharing what helped. Sample posts for now' },
   { href: '/onboarding', title: 'Redo my check-in', desc: 'Update your answers or upload a bank statement' },
   { href: '/', title: 'Switch person', desc: 'Try another demo person' },
@@ -46,6 +47,7 @@ export default function More() {
           </div>
           <div>Google Maps: {status?.google ? 'connected' : 'not set, using sample places'}</div>
           <div>Share prices: {status?.finnhub ? 'Finnhub connected' : 'sample prices'}</div>
+          <div>Reddit: {status?.reddit === 'api' ? 'official API (key set)' : status?.reddit === 'rss' ? 'public feeds (no key needed)' : 'off, using sample posts'}</div>
         </div>
         <Button
           variant="ghost"
