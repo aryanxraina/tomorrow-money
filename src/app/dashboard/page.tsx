@@ -340,6 +340,7 @@ export default function Dashboard() {
               <p>We replay your real spending 400 times: bills and income on their usual dates, everyday spending sampled from your own past weeks.</p>
               <p>Energy is assumed about 30% higher in winter. Council tax follows 10 monthly payments (April to January). Known bills and lump sums you told us about are included.</p>
               <p>The shaded band shows the middle 80% of outcomes. The AI never does this maths; it only explains the result.</p>
+              <p>Risk figures are estimates and can move by about 5 points either way.</p>
             </Why>
           </Card>
           <Card>

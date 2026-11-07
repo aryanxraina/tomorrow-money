@@ -80,6 +80,7 @@ src/lib/data/        4 demo personas (6 months of synthetic transactions), sampl
 src/app/api/         narrate, agent, receipt, subscriptions, places, quote, status
 src/app/*            screens
 scripts/check-engine.ts   npm run check: prints every persona's results, tests the receipt parser and number guard
+scripts/audit_engine.py   npm run audit: independent Python check of the engine (standard library only, not used by the app)
 scripts/smoke-api.mjs     hits every API route: node scripts/smoke-api.mjs [baseUrl] [mode]
 scripts/smoke-ui.mjs      browser pass, every page and persona at phone width (uses installed Chrome)
 scripts/check-narration.mts, debug-narration.mts   live on-device narration checks
@@ -97,7 +98,17 @@ Full scripts for both submissions are in `PITCH.md`. Before demoing, use More â†
 6. **Switch persona** (Jordan: tax bill in January; Kacper: Polish + cash fees; Priya: council tax she doesn't owe).
 7. **Turn Wi-Fi off:** same app, on-device AI.
 
+## Checking the maths
+
+`npm run audit` needs Python 3 on your PATH as `python`. On macOS or Linux, run `npx tsx scripts/export-audit-data.mts && python3 scripts/audit_engine.py`. It takes about 25 seconds.
+
+It recomputes spending, fees, tax and safe days from the raw transactions, and re-implements the forecast in Python to compare against the TypeScript engine at 10,000 runs each. It also fails if a figure quoted in `PITCH.md` no longer matches the engine.
+
+It shows the sums are done as designed. It doesn't show that the forecast predicts real life, which would need a back-test with real outcomes. It also takes the detected bill schedule as an input, checking the spacing but not re-detecting the bills.
+
 ## Honesty notes (say these if asked)
+
+- Forecast risk figures come from 400 simulations, so they can move by about 5 points. At 10,000 runs, Amara's 34% is about 36%. No "Can I afford it?" verdict changes for any demo person.
 
 - Demo people, receipts, emails and shop prices are **synthetic and labelled as samples**.
 - Entitlement amounts are **estimates**; links go to official sources. This is guidance, not regulated financial or debt advice.

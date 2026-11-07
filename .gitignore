@@ -4,6 +4,7 @@
 /node_modules
 /src/p2p/node_modules
 /src/p2p/.house-*
+/.audit
 /.pnp
 .pnp.*
 .yarn/*

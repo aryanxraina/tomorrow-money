@@ -10,7 +10,7 @@ Two submissions from one codebase. Every figure below comes from the app's engin
 | --- | --- | --- | --- | --- |
 | Amara, Leeds | Single parent, prepayment meter, BNPL | 34% risk on 6 Dec, **reaching 100% by 12 Dec** | 5 → 0 → 6 | £417/yr poverty premium. May be missing about £106/month plus £150 one-off. Risky days 25 → 8 |
 | Jordan, Birmingham | Gig rider | Fine until an estimated £1,770 Self Assessment bill on 31 Jan | 6 → 0 → 24 | Risky days 5 → 0, if HMRC agrees a payment plan |
-| Kacper, Peterborough | New to UK, Polish, zero hours | 48% risk on 3 Dec, 41% with plan | 12 → 24 → 26 | £164/yr in cash machine and transfer fees |
+| Kacper, Peterborough | New to UK, Polish, zero hours | 48% risk on 3 Dec, 42% with plan | 12 → 24 → 26 | £164/yr in cash machine and transfer fees |
 | Priya, Manchester | Student, termly loan | 100% on 1 Jan before the loan arrives | 24 → 25 → 44 | Paying about £980/yr council tax she may not owe. Risky days 18 → 4 |
 
 Amara's plan is not a magic fix: her peak risk only falls to 85%. Say that if asked. It is more credible than claiming she is safe.
@@ -68,7 +68,7 @@ Amara's plan is not a magic fix: her peak risk only falls to 85%. Say that if as
 | Customer focus & user-centric design | Optional questions, plain words, one headline number, asks permission before adding a receipt |
 | Innovation & creativity | Financial time travel, Safe days, checkout comparison that counts the trip, poverty premium total |
 | Social impact & inclusivity (ethical, transparent) | 4 languages with right-to-left, offline, badges on every sentence, "Why am I seeing this?", no credit or pricing use |
-| Use of AI & data | Monte Carlo forecast, recurring bill detection, number guard, code-decided verdicts, AI reading receipts and emails |
+| Use of AI & data | Monte Carlo forecast, recurring bill detection, number guard, code-decided verdicts, AI reading receipts and emails, independent Python audit of the engine (`npm run audit`) |
 | Feasibility & demo clarity | Runs today with no keys, 4 distinct stories, plain TypeScript engine with `npm run check` |
 
 ---
@@ -139,7 +139,9 @@ Amara's plan is not a magic fix: her peak risk only falls to 85%. Say that if as
 # Judge Q&A
 
 **1. How accurate is the forecast?**
-It replays the person's own bills and spending patterns 400 times. It has not been back-tested against real outcomes, because all our data is synthetic. A pilot would need to measure that. The risk figures are model outputs, not guarantees.
+Two separate answers. Is the maths right? We checked it: a separate Python audit recomputes the figures from the raw transactions and re-implements the simulation, and at 10,000 runs each the two agree closely. Does it predict real life? We don't know yet. It has not been back-tested against real outcomes, because all our data is synthetic, and a pilot would need to measure that.
+
+The app runs 400 simulations, so its risk figures can move by about 5 points. Amara's 34% is about 36% at 10,000 runs, and her £60 check of 52% to 84% is about 60% to 88%. No verdict changes for any demo person. We kept 400 so the check stays quick on a phone, and the app states the margin.
 
 **2. Is this regulated financial advice?**
 No. It is guidance, and the app says so. For debt problems it points to free regulated advisers such as StepChange, National Debtline and Citizens Advice. A real launch would need legal review of that boundary.
@@ -151,7 +153,7 @@ Code calculates every number. AI text containing a number the app didn't supply 
 Good enough to explain, not good enough to trust alone. In testing, freer rewriting turned "one-off" into "once a year", and in Polish it turned "cash machine fees" into something about casinos. So on-device narration on the dashboard is English only and often shows the app's own wording, with the right badge. The coach chat still uses the model in every language, and those answers can contain mistakes.
 
 **5. Is the data real? Are the shop prices real?**
-No. People, transactions, receipts, emails, shop and fuel prices are synthetic and labelled. Share prices and Google Places are live only if keys are set. Entitlement amounts are estimates based on the person's answers, with links to official checks.
+No. People, transactions, receipts, emails, shop and fuel prices are synthetic and labelled. Nothing comes from Reddit or any other community site: the Money Circle posts are samples we wrote, and the shared board itself isn't built. Share prices and Google Places are live only if keys are set. Entitlement amounts are estimates based on the person's answers, with links to official checks.
 
 **6. Does it really work offline?**
 The forecast, plan, rules wording and translated text need no network. The model has to be downloaded once, and shop locations fall back to samples offline. Say this only after rehearsing with Wi-Fi off on the demo machine.

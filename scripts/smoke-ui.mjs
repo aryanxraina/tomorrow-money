@@ -143,11 +143,12 @@ for (const id of PERSONAS) {
   page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
   page.on('pageerror', (e) => errs.push(e.message));
   await page.goto(base + '/onboarding');
-  // Pages render after mount, which is slow on a first load in dev mode.
-  await page.getByRole('button', { name: /next|continue|see my|finish|done/i }).last().waitFor({ timeout: 60000 });
+  // Scoped to main: in dev mode Next.js adds its own "Open Next.js Dev Tools" button, which also matches "next".
+  const nextButton = () => page.locator('main').getByRole('button', { name: /next|continue|see my|finish|done/i }).last();
+  await nextButton().waitFor({ timeout: 60000 }); // pages render after mount, slow on a first dev load
   for (let i = 0; i < 8 && !page.url().includes('/dashboard'); i++) {
     await page.waitForTimeout(300);
-    const next = page.getByRole('button', { name: /next|continue|see my|finish|done/i }).last();
+    const next = nextButton();
     if (!(await next.count())) break;
     await next.click();
   }
