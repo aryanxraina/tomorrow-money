@@ -19,12 +19,13 @@ import json
 import math
 import random
 import re
+import statistics
 import sys
 from datetime import date, timedelta
 from pathlib import Path
 
 DATA = Path(".audit/engine.json")
-RUNS = 10_000  # the engine uses 400, so its sampling error dominates the comparison
+RUNS = 10_000  # far more than the app uses, so the app's sampling error dominates the comparison
 PENCE = 0.01
 HORIZON = 90
 RISK_THRESHOLD = 0.25
@@ -81,8 +82,8 @@ def audit_summary(p: dict, essential: set[str], today: str) -> None:
     e = p["engine"]
     check(close(money_out, e["monthlyOut"]), "monthly out", f"£{money_out:.2f}")
     # Students' income is averaged from what they tell us, because their loan arrives in lumps.
-    if "student_loan" in p["answers"]["incomeTypes"]:
-        expected_in = max(p["answers"]["monthlyIncome"], 1)
+    if "student_loan" in p["answers"]["incomeTypes"] and p["answers"]["monthlyIncome"] > 0:
+        expected_in = p["answers"]["monthlyIncome"]
     else:
         expected_in = money_in or p["answers"]["monthlyIncome"]
     check(close(expected_in, e["monthlyIn"]), "monthly in", f"£{expected_in:.2f}")
@@ -175,20 +176,45 @@ def audit_schedule(p: dict) -> None:
     check(not bad, "bills fall due on their schedule; council tax skips Feb and Mar", "; ".join(bad))
 
 
-# ---- Everyday spending pool ----------------------------------------------------------------------
+# ---- Everyday cash flow pool ---------------------------------------------------------------------
+
+
+def winter_factor(day: date) -> float:
+    if day.month in (12, 1, 2):
+        return 1.3
+    return 1.15 if day.month in (11, 3) else 1.0
+
+
+def counts_as_everyday(t: dict, paid_in: dict[str, list[str]], to: str) -> bool:
+    """Spending of £250 or less; money in of £250 or less, or more if the same payer keeps paying; never from a payer who has stopped."""
+    if t["source"] == "receipt" or t["category"] in ("savings", "internal"):
+        return False
+    if t["amount"] < 0:
+        return -t["amount"] <= 250
+    dates = sorted(paid_in.get(t["key"], []))
+    if len(dates) >= 2:
+        gaps = [days_between(b, a) for a, b in zip(dates, dates[1:])]
+        if days_between(to, dates[-1]) > max(14, statistics.median(gaps) * 2 + 7):
+            return False
+    return t["amount"] <= 250 or len(dates) >= (2 if t["category"] == "income" else 3)
 
 
 def build_pool(p: dict, today: str) -> list[list[dict]]:
-    first, _to, days = data_window(p, today, 91)
+    first, to, days = data_window(p, today, 91)
     start = d(first)
     recurring = {r["key"] for r in p["recurring"]}
     by_date = {(start + timedelta(days=i)).isoformat(): {"other": 0.0, "energy": 0.0} for i in range(days)}
+    paid_in: dict[str, list[str]] = {}
     for t in p["txns"]:
-        if t["amount"] >= 0 or t["date"] not in by_date or t["source"] == "receipt":
+        if t["amount"] > 0 and t["date"] in by_date and t["source"] != "receipt" and t["category"] not in ("savings", "internal"):
+            paid_in.setdefault(t["key"], []).append(t["date"])
+    for t in p["txns"]:
+        if t["date"] not in by_date or t["key"] in recurring or not counts_as_everyday(t, paid_in, to):
             continue
-        if t["key"] in recurring or t["category"] in ("transfers", "savings", "internal") or abs(t["amount"]) > 250:
-            continue
-        by_date[t["date"]]["energy" if t["category"] == "energy" else "other"] += -t["amount"]
+        if t["amount"] < 0 and t["category"] == "energy":
+            by_date[t["date"]]["energy"] += -t["amount"] / winter_factor(d(t["date"]))  # held at its base level
+        else:
+            by_date[t["date"]]["other"] += -t["amount"]
     pool: list[list[dict]] = [[] for _ in range(7)]
     for key in sorted(by_date):
         pool[js_weekday(d(key))].append(by_date[key])
@@ -201,16 +227,10 @@ def audit_pool(p: dict, pool: list[list[dict]]) -> None:
         len(mine) == len(theirs) and all(close(a["other"], b["other"]) and close(a["energy"], b["energy"]) for a, b in zip(mine, theirs))
         for mine, theirs in zip(pool, engine)
     )
-    check(same, "everyday spending pool matches, day by day")
+    check(same, "everyday cash flow pool matches, day by day")
 
 
 # ---- Monte Carlo forecast ------------------------------------------------------------------------
-
-
-def winter_factor(day: date) -> float:
-    if day.month in (12, 1, 2):
-        return 1.3
-    return 1.15 if day.month in (11, 3) else 1.0
 
 
 def simulate(p: dict, pool: list[list[dict]], today: str, adjust: dict | None, schedule: list[dict], seed: int) -> dict:
@@ -231,13 +251,18 @@ def simulate(p: dict, pool: list[list[dict]], today: str, adjust: dict | None, s
             fixed = r["last"] * ct_multiplier * (10 / 12 if spread and not p["ctAlready12"] else 1)
             if fixed == 0:
                 continue
-        scale = adjust.get("scale", {}).get(r["category"], 1) if r["direction"] == "out" else 1
         sign = 1 if r["direction"] == "in" else -1
-        samples = [a * scale for a in r["amounts"][-12:]] if r["variable"] else None
+        # Energy that follows usage moves with the season; a fixed Direct Debit doesn't.
+        seasonal = r["category"] == "energy" and r["direction"] == "out" and (r["cadence"] == "days" or r["variable"])
+        base_fixed = fixed / winter_factor(d(r["lastDate"])) if seasonal and fixed is not None else fixed
+        base_samples = None
+        if r["variable"]:
+            base_samples = [a / winter_factor(d(x)) if seasonal else a for a, x in zip(r["amounts"], r["dates"])][-12:]
         for s in item["dates"]:
             offset = days_between(s, today)
             if 0 <= offset < HORIZON:
-                events[offset].append((sign, fixed * scale if fixed is not None else None, samples))
+                season = winter_factor(d(s)) if seasonal else 1
+                events[offset].append((sign, base_fixed * season if base_fixed is not None else None, [a * season for a in base_samples] if base_samples else None))
 
     dropped = set(adjust.get("dropKnownLabels", []))
     for k in [x for x in p["known"] if x["label"] not in dropped] + adjust.get("extra", []):
@@ -248,7 +273,6 @@ def simulate(p: dict, pool: list[list[dict]], today: str, adjust: dict | None, s
     days = [start + timedelta(days=i) for i in range(HORIZON)]
     day_pool = [pool[js_weekday(x)] for x in days]
     winter = [winter_factor(x) for x in days]
-    grocery_scale = adjust.get("scale", {}).get("groceries", 1)
     daily_delta = adjust.get("dailyDelta", 0)
 
     rng = random.Random(seed)
@@ -261,7 +285,7 @@ def simulate(p: dict, pool: list[list[dict]], today: str, adjust: dict | None, s
                 balance += sign * (fixed if fixed is not None else (rng.choice(samples) if samples else 0))
             if day_pool[i]:
                 sample = rng.choice(day_pool[i])
-                balance -= sample["other"] * grocery_scale + sample["energy"] * winter[i]
+                balance -= sample["other"] + sample["energy"] * winter[i]
             balance += daily_delta
             columns[i][run] = balance
             if balance < 0:
@@ -270,7 +294,7 @@ def simulate(p: dict, pool: list[list[dict]], today: str, adjust: dict | None, s
     return {"pBelow0": [b / RUNS for b in below], "p50": medians}
 
 
-def sampling_margin(prob: float, runs: int = 400) -> float:
+def sampling_margin(prob: float, runs: int) -> float:
     """95% margin of error, in percentage points, for a risk estimated from `runs` simulations."""
     return 1.96 * math.sqrt(prob * (1 - prob) / runs) * 100
 
@@ -318,8 +342,9 @@ def audit_forecast(p: dict, pool: list[list[dict]], today: str, seed: int) -> No
     bought = simulate(p, pool, today, {"extra": [{"date": today, "amount": -60, "label": "Planned purchase"}]}, p["schedule"], seed + 3)
     compare_forecast("forecast after a £60 purchase", bought, big["bought60"], runs)
 
-    # What the app shows comes from 400 runs, so it should sit within sampling error of the steadier figure.
-    compare_forecast("shown in app (400 runs)", base, e["forecast"], 400)
+    # What the app shows comes from fewer runs, so it should sit within sampling error of the steadier figure.
+    shown_runs = e["shownRuns"]
+    compare_forecast(f"shown in app ({shown_runs} runs)", base, e["forecast"], shown_runs)
     for name, mine, shown in (("in 90 days", base, e["safeDaysBase"]), ("with plan", plan, e["safeDaysPlan"])):
         value = max(0, mine["p50"][-1] + savings) / daily
         check(abs(value - shown) <= 3, f"safe days {name}", f"shown {shown:.1f}, audit {value:.1f}")
@@ -332,7 +357,7 @@ def audit_forecast(p: dict, pool: list[list[dict]], today: str, seed: int) -> No
     first = next((i for i, x in enumerate(base["pBelow0"]) if x >= RISK_THRESHOLD), None)
     first_text = "none" if first is None else f"{(d(today) + timedelta(days=first)).isoformat()} at {base['pBelow0'][first] * 100:.1f}%"
     shown_first = e["forecast"]["firstRisk"]
-    shown_text = "none" if not shown_first else f"{shown_first['date']} at {shown_first['p'] * 100:.1f}% (±{sampling_margin(shown_first['p']):.0f} points from sampling)"
+    shown_text = "none" if not shown_first else f"{shown_first['date']} at {shown_first['p'] * 100:.1f}% (±{sampling_margin(shown_first['p'], shown_runs):.0f} points from sampling)"
     print(f"  info first risky day: shown {shown_text}; at {RUNS:,} runs {first_text}")
     print(f"  info risky days: shown {risky_days(e['forecast']['pBelow0'])} to {risky_days(e['plan']['pBelow0'])}; at {RUNS:,} runs {risky_days(base['pBelow0'])} to {risky_days(plan['pBelow0'])}")
 
@@ -343,7 +368,7 @@ def main() -> int:
         return 2
     data = json.loads(DATA.read_text(encoding="utf-8"))
     today, essential = data["today"], set(data["essential"])
-    print(f"Independent audit in Python: {RUNS:,} runs per forecast against the engine's 400, dated {today}")
+    print(f"Independent audit in Python: {RUNS:,} runs per forecast, dated {today}")
     for index, p in enumerate(data["people"]):
         print(f"\n=== {p['name']}")
         audit_summary(p, essential, today)

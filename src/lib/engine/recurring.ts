@@ -79,7 +79,8 @@ export function detectRecurring(txns: Txn[], today: string): Recurring[] {
     let everyDays: number | undefined;
     if (monthlyGaps && domSteady) {
       cadence = 'monthly';
-    } else if (list.length >= 4 && medInt >= 5 && medInt <= 35) {
+    } else if (list.length >= 3 && medInt >= 5 && medInt <= 35) {
+      // Three payments is enough: a 3-month statement only shows three 4-weekly wages.
       const steady = intervals.filter((i) => Math.abs(i - medInt) <= Math.max(1, medInt * 0.2)).length / intervals.length;
       if (steady >= 0.75) {
         cadence = 'days';

@@ -80,7 +80,10 @@ export interface Answers {
   housingCost: number;
   rentDay: number | null;
   energyPayment: 'prepayment' | 'direct_debit' | 'included';
+  energyMonthly: number;
+  billsMonthly: number; // phone, broadband, insurance, subscriptions
   foodWeekly: number;
+  otherWeekly: number; // travel, shopping and everything else
   debts: DebtType[];
   debtRepayMonthly: number;
   savings: number;

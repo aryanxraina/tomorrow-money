@@ -9,7 +9,7 @@ const shots = process.argv[3];
 if (shots) mkdirSync(shots, { recursive: true });
 const { today, seeds } = JSON.parse(readFileSync('.audit/seeds.json', 'utf8'));
 const STORE = 'tomorrow-v2';
-const PAGES = ['/home', '/spending', '/forecast', '/help', '/plan', '/ask', '/snap', '/more', '/subscriptions', '/learn', '/nearby'];
+const PAGES = ['/home', '/spending', '/forecast', '/help', '/plan', '/ask', '/snap', '/more', '/details', '/subscriptions', '/learn', '/nearby'];
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const problems = [];
 
@@ -103,8 +103,105 @@ for (const seed of seeds) {
   await page.getByText('This is an estimate from your answers').waitFor();
   await check('/home after questions');
   await snap('home-estimate');
+
+  // The follow-up questions: one at a time, and one "Not now" puts them away until asked for again.
+  setWhere('/home follow-ups');
+  await page.getByText('Make this more accurate').waitFor();
+  const before = await page.getByText(/^\d+ of \d+$/).innerText();
+  await page.getByRole('heading', { name: /How do you pay for energy/ }).waitFor({ timeout: 5000 });
+  const preselected = await page.getByRole('button', { name: 'Direct Debit', pressed: true }).count();
+  if (preselected) problems.push('follow-ups: a blank default looks like an answer');
+  await page.getByRole('button', { name: 'Not now' }).click();
+  await page.getByText(/Answer another when you’re ready/).waitFor({ timeout: 5000 });
+  await snap('home-paused');
+  await page.getByText(/Answer another when you’re ready/).click();
+  await page.getByRole('heading', { name: /Roughly how much do gas and electricity/ }).waitFor({ timeout: 5000 });
+  await page.getByLabel(/gas and electricity/).fill('90');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('heading', { name: /Phone, broadband/ }).waitFor({ timeout: 5000 });
+  const after = await page.getByText(/^\d+ of \d+$/).innerText();
+  if (before === after) problems.push('follow-ups: progress did not change');
+  await snap('home-followup');
+  const stored = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)).state, STORE);
+  if (stored.answers.energyMonthly !== 90 || !stored.known.includes('energyMonthly')) problems.push('follow-ups: answer not saved');
+  await page.goto(`${base}/details`);
+  await page.getByText(/You’ve answered \d+ of \d+/).waitFor();
+  await page.getByRole('button', { name: /gas and electricity/ }).click();
+  await page.getByLabel(/gas and electricity/).fill('95');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByText('£95.00').waitFor();
+  await check('/details edited');
+  await snap('details');
+  // A mistyped bill must be removable, or the forecast is stuck with it.
+  await page.getByRole('button', { name: /Any big bill coming/ }).click();
+  await page.getByLabel('What’s it for?').fill('MOT');
+  await page.getByLabel('Date').fill('2026-12-05');
+  await page.getByLabel('Amount').fill('55');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByText('1 added').waitFor();
+  await page.getByRole('button', { name: /Any big bill coming/ }).click();
+  await snap('details-bill');
+  await page.getByRole('button', { name: 'Remove MOT' }).click();
+  await page.getByText('Not answered').first().waitFor();
+  const bills = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)).state.answers.yearlyBills.length, STORE);
+  if (bills !== 0) problems.push('details: bill not removed');
+  await check('/details bill removed');
   await ctx.close();
   console.log('done new person, questions');
+}
+
+// Someone who skips everything: nothing about their money may be claimed.
+{
+  const { ctx, page, go, check, snap, setWhere, note } = await open('blank', {});
+  setWhere('blank onboarding');
+  await page.goto(`${base}/onboarding`);
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: /Answer a few questions/ }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: /See my next 90 days/ }).click();
+  await page.waitForURL('**/home');
+  await page.getByRole('button', { name: 'Add your balance' }).waitFor();
+  const claims = /Looks steady|looks steady|Nice work|\d+% chance|(?<!below )£0\b|safe days? now/;
+  const noClaims = async (label) => {
+    // Chart axes are left out: the learning simulator's axis starts at £0, which says nothing about this person.
+    const text = await page.locator('main').evaluate((m) => {
+      const copy = m.cloneNode(true);
+      copy.querySelectorAll('svg').forEach((s) => s.remove());
+      return copy.textContent;
+    });
+    const hit = text.match(claims);
+    if (hit) note('claim about unknown money', `${label}: ${hit[0]}`);
+  };
+  await check('/home blank');
+  await noClaims('home');
+  await snap('home');
+  await page.getByRole('heading', { name: /What’s in your main account/ }).waitFor();
+  for (const path of ['/spending', '/forecast', '/plan', '/help', '/learn', '/details', '/subscriptions']) {
+    await go(path);
+    await check(path);
+    await noClaims(path);
+    if (path === '/forecast' || path === '/spending' || path === '/plan') await snap(path.slice(1));
+  }
+  setWhere('/ask blank');
+  await go('/ask');
+  await page.getByRole('button', { name: /Can I afford £60/ }).click();
+  await page.getByText(/We can’t say yet/).waitFor({ timeout: 10000 });
+  await page.getByRole('button', { name: 'When could I run out of money?' }).click();
+  await page.getByText(/We can’t work out your chance/).waitFor({ timeout: 10000 });
+  await check('/ask blank');
+  await snap('ask');
+  // Adding a balance starts the forecast's next question, not a false reading.
+  setWhere('/home balance added');
+  await go('/home');
+  await page.getByRole('button', { name: 'Add your balance' }).click();
+  await page.getByLabel('Balance today').fill('250');
+  await page.getByRole('button', { name: 'Save balance' }).click();
+  await page.getByText('£250').first().waitFor();
+  await page.getByText(/once we know your income/).waitFor();
+  await check('/home balance added');
+  await ctx.close();
+  console.log('done new person, skipping everything');
 }
 
 // A new person starting with a statement, then correcting a category.

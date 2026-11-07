@@ -28,7 +28,7 @@ let lastAnalysis: { inputs: unknown[]; profile: Profile; analysis: Analysis } | 
 function shared(inputs: unknown[], build: () => Profile) {
   if (lastAnalysis && lastAnalysis.inputs.length === inputs.length && lastAnalysis.inputs.every((x, i) => x === inputs[i])) return lastAnalysis;
   const profile = build();
-  const analysis = analyse(profile.answers, profile.txns, todayISO(), { rules: profile.rules, confirmed: profile.confirmed, known: profile.known });
+  const analysis = analyse(profile.answers, profile.txns, todayISO(), { rules: profile.rules, confirmed: profile.confirmed, known: profile.known, estimated: profile.estimated });
   lastAnalysis = { inputs, profile, analysis };
   return lastAnalysis;
 }

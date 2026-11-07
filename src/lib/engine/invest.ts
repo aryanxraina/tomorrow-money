@@ -5,12 +5,14 @@ export interface Readiness {
   checks: { label: string; ok: boolean; detail: string }[];
 }
 
-export function investReadiness(opts: { bufferDays: number; highCostDebt: boolean; essentialsRatio: number; riskNext90: number }): Readiness {
+/** Anything we don't know yet is passed as null, and counts as not ready rather than as a guess. */
+export function investReadiness(opts: { bufferDays: number | null; highCostDebt: boolean; essentialsRatio: number | null; riskNext90: number | null }): Readiness {
+  const notYet = 'We don’t know this yet.';
   const checks = [
-    { label: 'Safety buffer of at least 30 days', ok: opts.bufferDays >= 30, detail: `You have about ${Math.round(opts.bufferDays)} days.` },
+    { label: 'Safety buffer of at least 30 days', ok: opts.bufferDays !== null && opts.bufferDays >= 30, detail: opts.bufferDays === null ? notYet : `You have about ${Math.round(opts.bufferDays)} days.` },
     { label: 'No high-cost debt', ok: !opts.highCostDebt, detail: opts.highCostDebt ? 'Paying off a high-cost loan comes first.' : 'None found.' },
-    { label: 'Low risk of running out in the next 3 months', ok: opts.riskNext90 < 0.1, detail: `Highest risk: ${Math.round(opts.riskNext90 * 100)}%.` },
-    { label: 'Some room after essentials', ok: opts.essentialsRatio < 0.8, detail: `Essentials take ${Math.round(opts.essentialsRatio * 100)}% of income.` },
+    { label: 'Low risk of running out in the next 3 months', ok: opts.riskNext90 !== null && opts.riskNext90 < 0.1, detail: opts.riskNext90 === null ? notYet : `Highest risk: ${Math.round(opts.riskNext90 * 100)}%.` },
+    { label: 'Some room after essentials', ok: opts.essentialsRatio !== null && opts.essentialsRatio < 0.8, detail: opts.essentialsRatio === null ? notYet : `Essentials take ${Math.round(opts.essentialsRatio * 100)}% of income.` },
   ];
   return { ready: checks.every((c) => c.ok), checks };
 }

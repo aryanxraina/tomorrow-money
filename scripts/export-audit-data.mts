@@ -5,7 +5,7 @@ import { FIXTURE_TODAY as TODAY, getPersonas } from '../tests/fixtures/personas'
 import { affordability, analyse, planForecast, safeDays, whatIf, type Analysis } from '../src/lib/engine/analyse';
 import { ESSENTIAL } from '../src/lib/engine/categorise';
 import { addDays } from '../src/lib/engine/dates';
-import { runForecast, type Adjust, type Forecast } from '../src/lib/engine/forecast';
+import { FORECAST_RUNS, runForecast, type Adjust, type Forecast } from '../src/lib/engine/forecast';
 import { combineAdjust } from '../src/lib/engine/plan';
 import { nextDates, txnKey, type Recurring } from '../src/lib/engine/recurring';
 
@@ -30,7 +30,6 @@ const adjustOf = (a: Adjust) => ({
   dropKnownLabels: a.dropKnownLabels ?? [],
   ctSpread12: !!a.ctSpread12,
   ctMultiplier: a.ctMultiplier ?? 1,
-  scale: a.scale ?? {},
 });
 
 /** The engine's own code at the audit's run count, so a real bug can be told apart from sampling noise. */
@@ -41,7 +40,7 @@ const large = (an: Analysis, adjust?: Adjust) => {
 };
 
 const people = getPersonas().map((p) => {
-  const an = analyse(p.answers, p.txns, TODAY, { known: ['adults'] });
+  const an = analyse(p.answers, p.txns, TODAY, { known: ['adults', 'balance'] });
   const selected = an.actions.filter((a) => a.kind !== 'claim');
   const adjust = combineAdjust(selected);
   const plan = planForecast(an, selected);
@@ -53,7 +52,7 @@ const people = getPersonas().map((p) => {
     answers: { balance: p.answers.balance, savings: p.answers.savings, incomeTypes: p.answers.incomeTypes, monthlyIncome: p.answers.monthlyIncome },
     // After clean-up, because that's what every figure is worked out from. The audit checks the sums from here.
     txns: an.txns.map((t) => ({ date: t.date, description: t.description, amount: t.amount, category: t.category, source: t.source, key: txnKey(t) })),
-    recurring: an.recurring.map((r) => ({ key: r.key, label: r.label, category: r.category, direction: r.direction, cadence: r.cadence, everyDays: r.everyDays, dayOfMonth: r.dayOfMonth, lastDate: r.lastDate, last: r.last, variable: r.variable, amounts: r.amounts })),
+    recurring: an.recurring.map((r) => ({ key: r.key, label: r.label, category: r.category, direction: r.direction, cadence: r.cadence, everyDays: r.everyDays, dayOfMonth: r.dayOfMonth, lastDate: r.lastDate, last: r.last, variable: r.variable, amounts: r.amounts, dates: r.dates })),
     schedule: schedule(an.recurring, an.ctAlready12),
     known: an.known,
     ctAlready12: an.ctAlready12,
@@ -77,6 +76,7 @@ const people = getPersonas().map((p) => {
       plan: forecastSummary(plan),
       carRepair: forecastSummary(carRepair),
       afford60: { riskBefore: afford.riskBefore, riskAfter: afford.riskAfter },
+      shownRuns: FORECAST_RUNS,
       large: {
         runs: LARGE_RUNS,
         forecast: large(an),

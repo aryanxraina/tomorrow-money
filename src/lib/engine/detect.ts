@@ -34,7 +34,7 @@ export function detectProblems(
   a: Answers,
   s: Summary,
   recurring: Recurring[],
-  bufferDays: number,
+  bufferDays: number | null,
   tax: TaxEstimate | null,
 ): Problem[] {
   const p: Problem[] = [];
@@ -42,7 +42,7 @@ export function detectProblems(
   const recent = txns.filter((t) => t.date >= window.from && t.date < window.to && t.source !== 'receipt');
   const months = Math.max(1, Math.round(window.days / 30.4));
 
-  if (s.essentialsRatio > 0.7) {
+  if (s.monthlyIn > 0 && s.essentialsRatio > 0.7) {
     p.push({
       id: 'essentials',
       title: `Essentials take ${Math.round(s.essentialsRatio * 100)}% of your income`,
@@ -158,7 +158,7 @@ export function detectProblems(
     });
   }
 
-  if (bufferDays < 7) {
+  if (bufferDays !== null && bufferDays < 7) {
     p.push({
       id: 'buffer',
       title: 'No safety buffer',

@@ -19,8 +19,8 @@ export default function Learn() {
   const ready = investReadiness({
     bufferDays: an.bufferDays,
     highCostDebt: an.problems.some((p) => p.id === 'hcc'),
-    essentialsRatio: an.summary.essentialsRatio,
-    riskNext90: an.forecast.maxRisk.p,
+    essentialsRatio: an.summary.monthlyIn > 0 ? an.summary.essentialsRatio : null,
+    riskNext90: an.gaps.canJudge ? an.forecast.maxRisk.p : null,
   });
   const last = sim[sim.length - 1];
 

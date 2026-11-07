@@ -49,7 +49,8 @@ export default function Onboarding() {
 
   const finish = () => {
     const changes: Partial<Answers> = { name: name.trim(), nation, incomeTypes, onBenefits: incomeTypes.includes('benefits') };
-    const known = ['name', 'incomeTypes'];
+    const known = ['name'];
+    if (incomeTypes.length) known.push('incomeTypes');
     if (nation) known.push('nation');
     const add = (field: keyof Answers, value: number | null) => {
       if (value === null || Number.isNaN(value)) return;

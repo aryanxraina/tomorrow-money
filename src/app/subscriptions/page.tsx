@@ -17,13 +17,15 @@ export default function Subscriptions() {
   return (
     <div className="space-y-3">
       <TopBar title="Subscriptions" back="/more" />
-      <Card>
-        <div className="text-sm text-mut">You pay about</div>
-        <div className="font-display text-[34px] font-semibold leading-tight tracking-tight">
-          <Money value={monthly} /> <span className="font-sans text-base font-medium">a month</span>
-        </div>
-        <Muted className="mt-0.5">From {subs.length} regular {subs.length === 1 ? 'payment' : 'payments'} in your transactions.</Muted>
-      </Card>
+      {subs.length > 0 && (
+        <Card>
+          <div className="text-sm text-mut">You pay about</div>
+          <div className="font-display text-[34px] font-semibold leading-tight tracking-tight">
+            <Money value={monthly} /> <span className="font-sans text-base font-medium">a month</span>
+          </div>
+          <Muted className="mt-0.5">From {subs.length} regular {subs.length === 1 ? 'payment' : 'payments'} in your transactions.</Muted>
+        </Card>
+      )}
 
       <Card>
         <SectionTitle>Found in your transactions</SectionTitle>

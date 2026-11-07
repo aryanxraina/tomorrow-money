@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { Used } from '@/components/ui';
 import { postJSON, useEffectiveMode } from './hooks';
-import type { Facts, StepKey } from './narrative';
+import { missingBasics, type Facts, type StepKey } from './narrative';
 
 type Narration = { texts: Partial<Record<StepKey, string>>; used: Used };
 
@@ -13,12 +13,14 @@ const cache = new Map<string, Narration>();
 /** The sentence for one section: the AI's wording if it passed the checks, otherwise the app's own. */
 export function useNarration(facts: Facts | null, rulesText: Record<StepKey, string> | null, step: StepKey) {
   const mode = useEffectiveMode();
-  const key = facts ? `${mode}|${JSON.stringify(facts)}` : '';
+  // Without a balance and income there's no money to talk about, and the checks on AI text only cover numbers,
+  // so a warm rewording could easily imply more than we know. The app's own sentence says it plainly.
+  const key = facts && !missingBasics(facts) ? `${mode}|${JSON.stringify(facts)}` : '';
   const [finished, setFinished] = useState('');
   const narration = cache.get(key);
 
   useEffect(() => {
-    if (!facts || !rulesText || cache.has(key)) return;
+    if (!key || !facts || !rulesText || cache.has(key)) return;
     let alive = true;
     postJSON<{ texts: Narration['texts'] | null; used: Used }>('/api/ai/narrate', { mode, lang: 'en', facts, draft: rulesText })
       .then((r) => {

@@ -3,9 +3,9 @@
 import { BookOpen, Download, FileSpreadsheet, MapPin, Pencil, Repeat, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Button, Card, Field, Muted, PoundInput, Row, SectionTitle, Segmented, Switch, TopBar, Why } from '@/components/ui';
+import { Button, Card, Muted, Row, SectionTitle, Segmented, Switch, TopBar, Why } from '@/components/ui';
 import { todayISO } from '@/lib/engine/dates';
-import { useAiStatus, useMoney } from '@/lib/hooks';
+import { useAiStatus } from '@/lib/hooks';
 import { downloadFile } from '@/lib/ics';
 import { personData, useStore, type ThemeChoice } from '@/lib/store';
 
@@ -18,7 +18,6 @@ function csvCell(s: string | number) {
 
 export default function More() {
   const router = useRouter();
-  const money = useMoney();
   const status = useAiStatus();
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
@@ -26,10 +25,8 @@ export default function More() {
   const setBigText = useStore((s) => s.setBigText);
   const mode = useStore((s) => s.mode);
   const setMode = useStore((s) => s.setMode);
-  const saveAnswers = useStore((s) => s.saveAnswers);
   const txns = useStore((s) => s.txns);
   const reset = useStore((s) => s.reset);
-  const [savings, setSavings] = useState(money ? String(money.profile.answers.savings || '') : '');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const exportJson = () => downloadFile(`tomorrow-data-${todayISO()}.json`, JSON.stringify(personData(), null, 2), 'application/json');
@@ -47,23 +44,8 @@ export default function More() {
         <Row icon={<Repeat size={20} aria-hidden />} title="Subscriptions" sub="What you pay for regularly" href="/subscriptions" />
         <Row icon={<MapPin size={20} aria-hidden />} title="Nearby" sub="Free cash machines, advice and food banks" href="/nearby" />
         <Row icon={<BookOpen size={20} aria-hidden />} title="Learn about investing" sub="When it makes sense, and how it works" href="/learn" />
-        <Row icon={<Pencil size={20} aria-hidden />} title="Redo my check-in" sub="Update your answers" href="/onboarding" />
+        <Row icon={<Pencil size={20} aria-hidden />} title="Your details" sub="See and change your answers" href="/details" />
       </Card>
-
-      {money && (
-        <Card className="space-y-2">
-          <SectionTitle>Savings</SectionTitle>
-          <Field label="Savings you could use in an emergency" hint="Counted in your safe days.">
-            <PoundInput
-              value={savings}
-              onChange={(v) => {
-                setSavings(v);
-                saveAnswers({ savings: Number(v) || 0 }, ['savings']);
-              }}
-            />
-          </Field>
-        </Card>
-      )}
 
       <Card className="space-y-4">
         <SectionTitle>Appearance</SectionTitle>

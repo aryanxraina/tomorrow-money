@@ -6,7 +6,7 @@ import { AiNote, AiWriting, Card, inputCls, Muted, NoProfile, TopBar, Why, type 
 import { affordability } from '@/lib/engine/analyse';
 import { gbp, niceDate } from '@/lib/engine/dates';
 import { postJSON, useEffectiveMode, useMoney } from '@/lib/hooks';
-import { affordVerdict, rulesAnswer, SET_QUESTIONS } from '@/lib/narrative';
+import { affordVerdict, cantJudgeYet, missingBasics, rulesAnswer, SET_QUESTIONS } from '@/lib/narrative';
 
 interface Msg {
   role: 'user' | 'assistant';
@@ -46,44 +46,57 @@ export default function Ask() {
   const { an, facts } = money;
   const subscriptions = an.recurring.filter((r) => r.category === 'subscriptions' && r.direction === 'out');
 
-  const send = async (text: string) => {
-    if (!text.trim() || busy) return;
-    const amountMatch = text.match(/£\s?(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s?(?:pounds|quid|gbp)/i);
-    const isAfford = /afford|buy|spend/i.test(text) && amountMatch;
-    let priceFacts: Record<string, unknown> | undefined;
-    let verdict: string | undefined;
-    let safe: boolean | undefined;
-    if (isAfford) {
-      const amount = Number(amountMatch![1] || amountMatch![2]);
-      const a = affordability(an, amount, an.today);
-      // Safe means: the purchase leaves the 30-day risk low and doesn't noticeably raise it. Decided here, never by an AI.
-      safe = a.riskAfter < 0.25 && a.riskAfter - a.riskBefore < 0.1;
-      const saferDate = a.saferDate ? niceDate(a.saferDate.date) : undefined;
-      const riskBefore = `${Math.round(a.riskBefore * 100)}%`;
-      const riskAfter = `${Math.round(a.riskAfter * 100)}%`;
-      verdict = affordVerdict({ amount: gbp(amount), riskBefore, riskAfter, safe, saferDate: safe ? undefined : saferDate });
-      priceFacts = {
-        verdict: safe ? 'looks OK' : 'not a safe time to buy this',
+  const purchaseAnswer = (amount: number): Msg => {
+    const basics = missingBasics(facts);
+    if (basics) return { role: 'assistant', content: '', verdict: cantJudgeYet(basics), used: 'rules' };
+    const a = affordability(an, amount, an.today);
+    // Safe means: the purchase leaves the 30-day risk low and doesn't noticeably raise it. Decided here, never by an AI.
+    const safe = a.riskAfter < 0.25 && a.riskAfter - a.riskBefore < 0.1;
+    const saferDate = a.saferDate ? niceDate(a.saferDate.date) : undefined;
+    const riskBefore = `${Math.round(a.riskBefore * 100)}%`;
+    const riskAfter = `${Math.round(a.riskAfter * 100)}%`;
+    const next = !safe ? (an.actions.find((x) => x.kind === 'claim') ?? an.actions[0]) : undefined;
+    return {
+      role: 'assistant',
+      content: next ? `One thing that could help: ${next.title}.` : '',
+      verdict: affordVerdict({ amount: gbp(amount), riskBefore, riskAfter, safe, saferDate: safe ? undefined : saferDate, unknownCosts: an.gaps.costs }),
+      safe,
+      used: 'rules',
+      facts: {
         amount: gbp(amount),
         riskNext30DaysWithout: riskBefore,
         riskNext30DaysIfBoughtToday: riskAfter,
         lowestLikelyBalanceAfter: `${gbp(a.lowestAfter.value)} on ${niceDate(a.lowestAfter.date)}`,
         saferDate: a.saferDate ? `${saferDate} (risk ${Math.round(a.saferDate.risk * 100)}%)` : 'none in the next 30 days',
-      };
-    }
+      },
+    };
+  };
+
+  const send = async (text: string) => {
+    if (!text.trim() || busy) return;
+    const amountMatch = text.match(/£\s?(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s?(?:pounds|quid|gbp)/i);
+    const isAfford = /afford|buy|spend/i.test(text) && amountMatch;
     const history = msgs.map((m) => ({ role: m.role, content: m.content }));
     setMsgs((m) => [...m, { role: 'user', content: text }]);
     setQ('');
+    setBusy(true);
     // A purchase is answered entirely by code. In testing, a model added claims with no basis, such as
     // "wait until next month", to a verdict that already said everything the numbers support.
-    if (verdict) {
-      const next = !safe ? (an.actions.find((a) => a.kind === 'claim') ?? an.actions[0]) : undefined;
-      const content = next ? `One thing that could help: ${next.title}.` : '';
-      setMsgs((m) => [...m, { role: 'assistant', content, verdict, safe, used: 'rules', facts: priceFacts }]);
+    if (isAfford) {
+      // The check takes a moment on a slow phone, so let their question appear first.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      setMsgs((m) => [...m, purchaseAnswer(Number(amountMatch![1] || amountMatch![2]))]);
+      setBusy(false);
       setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
       return;
     }
-    setBusy(true);
+    // With no balance or income there's nothing for an AI to go on, and it could easily imply otherwise.
+    if (missingBasics(facts)) {
+      setMsgs((m) => [...m, { role: 'assistant', content: rulesAnswer(text, facts, subscriptions), used: 'rules' }]);
+      setBusy(false);
+      setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      return;
+    }
     try {
       let r: { text: string | null; used: Used };
       try {
@@ -123,7 +136,7 @@ export default function Ask() {
             </div>
           ) : (
             <div key={i} className="max-w-[92%] rounded-[22px] rounded-bl-md bg-card p-4">
-              {m.verdict && <p className={`text-[15px] font-semibold leading-relaxed ${m.safe ? 'text-good' : 'text-risk'}`}>{m.verdict}</p>}
+              {m.verdict && <p className={`text-[15px] font-semibold leading-relaxed ${m.safe === undefined ? '' : m.safe ? 'text-good' : 'text-risk'}`}>{m.verdict}</p>}
               {m.content && <p className={`whitespace-pre-wrap text-[15px] leading-relaxed ${m.verdict ? 'mt-2' : ''}`}>{m.content}</p>}
               <AiNote used={m.used} />
               {m.facts && (

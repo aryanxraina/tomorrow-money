@@ -41,8 +41,8 @@ export function summarise(txns: Txn[], today: string, answers: Answers): Summary
     .map(([category, v]) => ({ category, monthly: v * k }))
     .sort((a, b) => b.monthly - a.monthly);
   const essentialsMonthly = byCategory.filter((c) => ESSENTIAL.includes(c.category)).reduce((a, c) => a + c.monthly, 0);
-  // For lump-sum income (student loans) the 91-day window can mislead, so blend with the stated income.
-  const monthlyIn = answers.incomeTypes.includes('student_loan') ? Math.max(answers.monthlyIncome, 1) : inc * k || answers.monthlyIncome;
+  // For lump-sum income (student loans) the window can mislead, so what the person says comes first if they've said.
+  const monthlyIn = answers.incomeTypes.includes('student_loan') && answers.monthlyIncome > 0 ? answers.monthlyIncome : inc * k || answers.monthlyIncome;
 
   // weekly income volatility (coefficient of variation)
   const weekCount = Math.max(1, Math.ceil(days / 7));
@@ -123,41 +123,48 @@ export interface Group {
 
 const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
 
-export function fingerprint(s: Summary, a: Answers, bufferDays: number, premiumAnnual: number): FingerprintDim[] {
+/** Scores are only given for what we can see: no income means no income scores, rather than a score of zero. */
+export function fingerprint(s: Summary, a: Answers, bufferDays: number | null, premiumAnnual: number, regularIncome = false): FingerprintDim[] {
+  const uneven = a.incomeTypes.includes('gig') || a.incomeTypes.includes('zero_hours') || a.incomeTypes.includes('student_loan');
   let steady = 100 - s.incomeWeeklyCV * 110;
   if (a.incomeTypes.includes('gig') || a.incomeTypes.includes('zero_hours')) steady = Math.min(steady, 45);
   if (a.incomeTypes.includes('student_loan')) steady = Math.min(steady, 40);
   if (a.incomeTypes.includes('salary') || a.incomeTypes.includes('pension')) steady = Math.max(steady, 80);
-  else if (a.incomeTypes.includes('four_weekly') || a.incomeTypes.includes('benefits')) steady = Math.max(steady, 70);
+  else if (a.incomeTypes.includes('four_weekly') || a.incomeTypes.includes('benefits') || (regularIncome && !uneven)) steady = Math.max(steady, 70);
   const debtShare = s.monthlyIn ? s.debtMonthly / s.monthlyIn : 0;
   let debt = 100 - debtShare * 400;
   if (a.debts.includes('payday') || a.debts.includes('arrears')) debt -= 25;
-  return [
-    { id: 'steady', label: 'Steady income', score: clamp(steady), detail: `Weekly income varies by ${Math.round(s.incomeWeeklyCV * 100)}%` },
-    { id: 'room', label: 'Room left', score: clamp((1 - s.essentialsRatio) * 200), detail: `Essentials take ${Math.round(s.essentialsRatio * 100)}% of income` },
-    { id: 'debt', label: 'Low debt', score: clamp(debt), detail: `Debt repayments £${Math.round(s.debtMonthly)}/month` },
-    { id: 'buffer', label: 'Buffer', score: clamp((bufferDays / 60) * 100), detail: `${Math.round(bufferDays)} days of essentials covered` },
-    { id: 'fair', label: 'Low fees', score: clamp(100 - premiumAnnual / 6), detail: `£${Math.round(premiumAnnual)}/year in fees and charges` },
-    { id: 'access', label: 'Easy access', score: clamp(100 - a.barriers.length * 25), detail: a.barriers.length ? `${a.barriers.length} barrier(s) noted` : 'No barriers noted' },
-  ];
+  const dims: FingerprintDim[] = [];
+  if (s.monthlyIn > 0) {
+    // Weekly variation is meaningless for someone paid monthly: their pay lands in one week out of four.
+    dims.push({ id: 'steady', label: 'Steady income', score: clamp(steady), detail: uneven || !(regularIncome || isScheduled(a)) ? `Weekly income varies by ${Math.round(s.incomeWeeklyCV * 100)}%` : 'Paid on a regular schedule' });
+    dims.push({ id: 'room', label: 'Room left', score: clamp((1 - s.essentialsRatio) * 200), detail: `Essentials take ${Math.round(s.essentialsRatio * 100)}% of income` });
+  }
+  dims.push({ id: 'debt', label: 'Low debt', score: clamp(debt), detail: `Debt repayments £${Math.round(s.debtMonthly)}/month` });
+  if (bufferDays !== null) dims.push({ id: 'buffer', label: 'Buffer', score: clamp((bufferDays / 60) * 100), detail: `${Math.round(bufferDays)} days of essentials covered` });
+  dims.push({ id: 'fair', label: 'Low fees', score: clamp(100 - premiumAnnual / 6), detail: `£${Math.round(premiumAnnual)}/year in fees and charges` });
+  dims.push({ id: 'access', label: 'Easy access', score: clamp(100 - a.barriers.length * 25), detail: a.barriers.length ? `${a.barriers.length} barrier(s) noted` : 'No barriers noted' });
+  return dims;
 }
 
-export function groups(s: Summary, a: Answers, bufferDays: number): Group[] {
+const isScheduled = (a: Answers) => (['salary', 'four_weekly', 'benefits', 'pension', 'student_loan'] as const).some((t) => a.incomeTypes.includes(t));
+
+export function groups(s: Summary, a: Answers, bufferDays: number | null, regularIncome = false): Group[] {
   const g: Group[] = [];
   if (a.debts.includes('payday') || a.debts.includes('arrears') || s.debtMonthly > s.monthlyIn * 0.15 || (s.feesMonthly > 5 && a.debts.length > 0))
     g.push({ id: 'catching_up', label: 'Catching up', why: 'Debt repayments or fees are eating into your money', adapts: 'We put the cheapest way out of debt first and point you to free advice' });
-  const scheduled = ['salary', 'four_weekly', 'benefits', 'pension', 'student_loan'].some((t) => a.incomeTypes.includes(t as never));
-  if (a.incomeTypes.includes('gig') || a.incomeTypes.includes('zero_hours') || (!scheduled && s.incomeWeeklyCV > 0.35))
+  const scheduled = regularIncome || isScheduled(a);
+  if (a.incomeTypes.includes('gig') || a.incomeTypes.includes('zero_hours') || (s.monthlyIn > 0 && !scheduled && s.incomeWeeklyCV > 0.35))
     g.push({ id: 'juggler', label: 'Juggler', why: 'Your income changes from week to week', adapts: 'Weekly budgets and a "pay yourself a steady wage" smoother' });
   if (a.incomeTypes.includes('student_loan'))
     g.push({ id: 'lump_sum', label: 'Lump-sum', why: 'Most of your money arrives in big chunks', adapts: 'We show how many weeks your money will last' });
-  if (s.essentialsRatio > 0.7)
+  if (s.monthlyIn > 0 && s.essentialsRatio > 0.7)
     g.push({ id: 'stretched', label: 'Stretched', why: `Essentials take ${Math.round(s.essentialsRatio * 100)}% of your income`, adapts: 'We hunt for savings on essentials and support you may be missing' });
   if (a.barriers.includes('language') || a.barriers.includes('new_to_uk') || a.barriers.includes('no_bank_history'))
     g.push({ id: 'newcomer', label: 'Newcomer', why: 'New to UK systems', adapts: 'Plain words, and how UK bills and rights work' });
   if (a.incomeTypes.includes('pension') || a.barriers.includes('low_digital') || a.barriers.includes('disability'))
     g.push({ id: 'fixed_cautious', label: 'Fixed & cautious', why: 'Fixed income or less confident online', adapts: 'Bigger text, fewer screens, and an optional trusted helper' });
-  if (!g.length || (bufferDays >= 30 && s.essentialsRatio < 0.6 && !a.debts.includes('payday')))
+  if ((!g.length && s.monthlyIn > 0) || (bufferDays !== null && bufferDays >= 30 && s.monthlyIn > 0 && s.essentialsRatio < 0.6 && !a.debts.includes('payday')))
     g.push({ id: 'builder', label: 'Builder', why: 'You have some room to grow your safety net', adapts: 'Saving goals and, once ready, learning how investing works' });
   return g;
 }

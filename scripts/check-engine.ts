@@ -1,8 +1,11 @@
 import { inventedNumbers } from '../src/lib/ai/guard';
 import { extractJson } from '../src/lib/ai/provider';
-import { analyse, planForecast, safeDays, affordability } from '../src/lib/engine/analyse';
+import { analyse, estimateFromAnswers, missingCosts, planForecast, safeDays, affordability } from '../src/lib/engine/analyse';
+import { backtest } from '../src/lib/engine/backtest';
 import { categorise } from '../src/lib/engine/categorise';
-import { todayISO } from '../src/lib/engine/dates';
+import { addDays, todayISO } from '../src/lib/engine/dates';
+import { accuracy, nextQuestion, QUESTIONS } from '../src/lib/engine/questions';
+import { affordVerdict, buildFacts, cantJudgeYet, missingBasics, rulesAnswer, templates } from '../src/lib/narrative';
 import { parseReceiptText } from '../src/lib/engine/receipt';
 import { merchantKey } from '../src/lib/engine/recurring';
 import { decodeStatement, mergeTxns, parseDate, parseMoney, parseStatement } from '../src/lib/engine/statements';
@@ -19,7 +22,7 @@ import type { Txn } from '../src/lib/types';
 
 for (const p of getPersonas()) {
   const t0 = Date.now();
-  const an = analyse(p.answers, p.txns, TODAY, { known: ['adults'] });
+  const an = analyse(p.answers, p.txns, TODAY, { known: ['adults', 'balance'] });
   const sel = an.actions.filter((a) => a.kind !== 'claim');
   const pf = planForecast(an, sel);
   console.log(`\n=== ${p.name} (${p.txns.length} txns, ${Date.now() - t0}ms)`);
@@ -34,7 +37,7 @@ for (const p of getPersonas()) {
   console.log('base: firstRisk', f.firstRisk?.date, f.firstRisk?.p.toFixed(2), f.firstRisk?.trigger?.label, '| risk30', f.risk30.toFixed(2), '| max', f.maxRisk.date, f.maxRisk.p.toFixed(2), '| lowest', f.lowestP50.date, Math.round(f.lowestP50.value), '| end', Math.round(f.endP50));
   console.log('plan actions', sel.map((a) => `${a.title} (£${a.saveMonthly.toFixed(0)}/m)`).join('; '));
   console.log('plan: firstRisk', pf.firstRisk?.date, pf.firstRisk?.p.toFixed(2), '| risk30', pf.risk30.toFixed(2), '| max', pf.maxRisk.p.toFixed(2), '| end', Math.round(pf.endP50));
-  console.log('safe days now', an.bufferDays.toFixed(1), 'in90 base', safeDays(an, f, p.answers.savings).toFixed(1), 'plan', safeDays(an, pf, p.answers.savings).toFixed(1));
+  console.log('safe days now', an.bufferDays?.toFixed(1), 'in90 base', safeDays(an, f, p.answers.savings)?.toFixed(1), 'plan', safeDays(an, pf, p.answers.savings)?.toFixed(1));
   const t1 = Date.now();
   const af = affordability(an, 60, TODAY);
   console.log('afford £60 today', af.riskBefore.toFixed(2), '->', af.riskAfter.toFixed(2), 'safer', af.saferDate?.date, af.saferDate?.risk.toFixed(2), `${Date.now() - t1}ms`);
@@ -184,6 +187,115 @@ expect('picks the price over old prices and savings', f2('gym')?.amount === 20);
 expect('rolls an old date forward to the next due date', (f2('old')?.nextDate ?? '') >= TODAY);
 expect('a cancelled plan adds no bills', billsFromSub(f2('spotify')!, 'x').length === 0);
 expect('a monthly plan adds the next payments', billsFromSub(f2('netflix')!, 'x').length === 4 && billsFromSub(f2('netflix')!, 'x')[1].date === '2026-12-14');
+
+// ---- Follow-up questions ----
+console.log('\n=== Questions');
+const ctx = (a = BLANK_ANSWERS, known: string[] = [], skipped: string[] = [], estimated = true) => ({ a, an: analyse(a, estimateFromAnswers(a, TODAY), TODAY), known, skipped, estimated });
+expect('nothing is invented for an unanswered check-in', estimateFromAnswers(BLANK_ANSWERS, TODAY).length === 0);
+expect('answered costs appear in the estimate', estimateFromAnswers({ ...BLANK_ANSWERS, energyMonthly: 80, billsMonthly: 40, otherWeekly: 30 }, TODAY).filter((t) => /ENERGY|BILLS|EVERYDAY/.test(t.description)).length > 5);
+expect('included energy adds no energy bill', !estimateFromAnswers({ ...BLANK_ANSWERS, energyPayment: 'included', energyMonthly: 80 }, TODAY).some((t) => /ENERGY/.test(t.description)));
+expect('missing costs are named', missingCosts(BLANK_ANSWERS, []).includes('energy') && missingCosts(BLANK_ANSWERS, ['energyMonthly']).every((c) => c !== 'energy'));
+expect('first question is the balance', nextQuestion(ctx())?.id === 'balance');
+expect('answered questions aren’t asked again', nextQuestion(ctx(BLANK_ANSWERS, ['balance']))?.id === 'incomeTypes');
+expect('skipped questions aren’t asked again', nextQuestion(ctx(BLANK_ANSWERS, ['balance'], ['incomeTypes']))?.id === 'monthlyIncome');
+const withStatement = ctx(BLANK_ANSWERS, ['incomeTypes', 'balance'], [], false);
+expect('with a statement, we don’t ask what it already shows', nextQuestion(withStatement)?.id === 'energyPayment' && nextQuestion(ctx(BLANK_ANSWERS, ['incomeTypes', 'balance', 'energyPayment'], [], false))?.id === 'adults');
+const energyFirst = QUESTIONS.findIndex((q) => q.id === 'energyPayment') < QUESTIONS.findIndex((q) => q.id === 'energyMonthly');
+expect('how you pay for energy comes before how much', energyFirst);
+expect('no energy cost asked if it’s in the rent', !QUESTIONS.find((q) => q.id === 'energyMonthly')!.applies(ctx({ ...BLANK_ANSWERS, energyPayment: 'included' })));
+const allIds = QUESTIONS.map((q) => q.id);
+expect('every question can finish', nextQuestion(ctx(BLANK_ANSWERS, allIds)) === null);
+expect('discount question waits until we know you live alone', !QUESTIONS.find((q) => q.id === 'ctSingleDiscount')!.applies(ctx({ ...BLANK_ANSWERS, councilTaxMonthly: 100 })) && QUESTIONS.find((q) => q.id === 'ctSingleDiscount')!.applies(ctx({ ...BLANK_ANSWERS, councilTaxMonthly: 100 }, ['adults'])));
+const typesQ = QUESTIONS.find((q) => q.id === 'incomeTypes')!;
+expect('saying you get benefits also records it', typesQ.write(['benefits'], BLANK_ANSWERS).onBenefits === true);
+expect('progress counts only relevant questions', accuracy(ctx(BLANK_ANSWERS, ['incomeTypes'])).answered === 1 && accuracy(ctx(BLANK_ANSWERS, ['incomeTypes'])).total < QUESTIONS.length);
+const billQ = QUESTIONS.find((q) => q.id === 'bigBill')!;
+const withBill = { ...BLANK_ANSWERS, ...billQ.write({ date: '2026-11-20', amount: 300, label: 'MOT' }, BLANK_ANSWERS) };
+expect('a big bill goes into the forecast', analyse(withBill, month, TODAY).known.some((k) => k.label === 'MOT' && k.amount === -300));
+expect('a big bill can be taken back out', billQ.removeItem!(withBill.yearlyBills[0], withBill).yearlyBills?.length === 0 && billQ.items!(withBill).length === 1);
+expect('student income falls back to what the data shows', analyse({ ...BLANK_ANSWERS, incomeTypes: ['student_loan'] }, [txn('2026-10-05', 'BAR WAGES', 300), ...month], '2026-10-29').summary.monthlyIn > 1);
+
+// ---- What we don't know stays unknown ----
+console.log('\n=== Unknowns');
+const seen = (a = BLANK_ANSWERS, known: string[] = []) => analyse(a, estimateFromAnswers(a, TODAY), TODAY, { known, estimated: true });
+const nobody = seen();
+expect('no balance or income means no judgement on risk', !nobody.gaps.canJudge && nobody.gaps.balance && nobody.gaps.income);
+expect('no safe days are invented', nobody.bufferDays === null && safeDays(nobody, nobody.forecast, 0) === null);
+expect('a blank person isn’t told they have no safety buffer', !nobody.problems.some((p) => p.id === 'buffer'));
+expect('a blank person has no scores for what we can’t see', !nobody.fingerprint.some((d) => ['steady', 'room', 'buffer'].includes(d.id)) && nobody.groups.length === 0);
+const balanceOnly = seen({ ...BLANK_ANSWERS, balance: 1200 }, ['balance', 'monthlyIncome']);
+expect('a balance with no known costs doesn’t become 1,200 safe days', balanceOnly.gaps.canJudge && balanceOnly.bufferDays === null);
+const coreKnown = seen({ ...BLANK_ANSWERS, balance: 1200, housingCost: 600, foodWeekly: 50, monthlyIncome: 1500 }, ['balance', 'monthlyIncome', 'housingCost', 'foodWeekly']);
+expect('rent and food known gives safe days, and names what’s still missing', coreKnown.bufferDays !== null && coreKnown.bufferDays > 0 && coreKnown.gaps.costs.includes('energy') && !coreKnown.gaps.costs.includes('food'));
+const noIncome = analyse({ ...BLANK_ANSWERS, balance: 500 }, month, TODAY, { known: ['balance'] });
+expect('no income seen isn’t “essentials take 100% of your income”', !noIncome.problems.some((p) => p.id === 'essentials') && !noIncome.groups.some((g) => g.id === 'stretched'));
+const factsFor = (an: ReturnType<typeof analyse>, estimated = true) => buildFacts({ name: 'Sam', answers: BLANK_ANSWERS, txns: [], estimated, newestBankDate: null, known: [], rules: {}, confirmed: [] }, an, an.forecast, []);
+const blankWords = templates(factsFor(nobody));
+expect('nothing reassuring is said about nobody', !/steady|nice work/i.test(`${blankWords.predict} ${blankWords.detect}`), blankWords.predict);
+expect('and no risk number is given', !/\d+%/.test(blankWords.predict) && /your balance and your income/.test(blankWords.predict));
+expect('the coach says the same', !/steady|\d+%/.test(rulesAnswer('when could I run out of money?', factsFor(nobody), [])) && /can’t work out/.test(rulesAnswer('how many safe days?', factsFor(nobody), [])));
+const coreWords = templates(factsFor(coreKnown));
+expect('with costs missing, it doesn’t say steady', !/steady/i.test(coreWords.predict) && /energy/.test(coreWords.predict), coreWords.predict);
+expect('a purchase verdict names the missing costs', /energy/.test(affordVerdict({ amount: '£20', riskBefore: '1%', riskAfter: '2%', safe: true, unknownCosts: ['energy'] })));
+expect('and says it can’t judge without the basics', /your income/.test(cantJudgeYet(missingBasics({ notKnownYet: { balance: false, income: true, costs: [] } }))));
+const salaried = analyse({ ...BLANK_ANSWERS, balance: 500 }, [...['2026-08-28', '2026-09-28', '2026-10-28'].map((d) => txn(d, 'ACME SALARY', 1500)), ...month], '2026-11-01', { known: ['balance'] });
+expect('someone paid monthly isn’t told their income swings', !salaried.groups.some((g) => g.id === 'juggler') && salaried.fingerprint.find((d) => d.id === 'steady')?.detail === 'Paid on a regular schedule');
+
+// ---- Cash flow the forecast can expect ----
+console.log('\n=== Everyday cash flow');
+const poolOf = (txns: Txn[], today: string) => {
+  const an = analyse(BLANK_ANSWERS, txns, today);
+  return an.inputs.pool.flat().reduce((s, d) => s + d.other, 0);
+};
+const daily = Array.from({ length: 60 }, (_, i) => txn(addDays('2026-08-01', i), 'TESCO', -10));
+const spendOnly = poolOf(daily, '2026-10-01');
+expect('small transfers out are counted', Math.abs(poolOf([...daily, txn('2026-09-10', 'J SMITH', -40)], '2026-10-01') - spendOnly - 40) < 0.01);
+expect('small transfers in are counted', Math.abs(poolOf([...daily, txn('2026-09-10', 'J SMITH', 40)], '2026-10-01') - spendOnly + 40) < 0.01);
+expect('refunds are counted', Math.abs(poolOf([...daily, txn('2026-09-10', 'ASOS REFUND', 30)], '2026-10-01') - spendOnly + 30) < 0.01);
+expect('a big one-off in isn’t expected again', Math.abs(poolOf([...daily, txn('2026-09-10', 'J SMITH', 2000)], '2026-10-01') - spendOnly) < 0.01);
+expect('a big one-off out isn’t expected again', Math.abs(poolOf([...daily, txn('2026-09-10', 'GARAGE', -900)], '2026-10-01') - spendOnly) < 0.01);
+expect('moves to savings aren’t spending', Math.abs(poolOf([...daily, txn('2026-09-10', 'TO SAVINGS', -100)], '2026-10-01') - spendOnly) < 0.01);
+const unevenPay = ['2026-08-03', '2026-08-24', '2026-08-31', '2026-09-19', '2026-09-26'].map((d) => txn(d, 'NORTHERN STAFFING', 420));
+const unevenPool = analyse(BLANK_ANSWERS, [...daily, ...unevenPay], '2026-10-01');
+expect('agency pay at uneven dates isn’t lost', !unevenPool.recurring.some((r) => r.direction === 'in') && Math.abs(unevenPool.inputs.pool.flat().reduce((s, d) => s + d.other, 0) - spendOnly + 2100) < 0.01);
+expect('so the forecast shows that money coming in', unevenPool.forecast.endP50 > analyse(BLANK_ANSWERS, daily, '2026-10-01').forecast.endP50 + 1000);
+const namedPay = ['2026-08-20', '2026-09-20'].map((d) => txn(d, 'ACME WAGES', 800));
+expect('named wages count from the second payment', Math.abs(poolOf([...daily, ...namedPay.slice(0, 1)], '2026-10-01') - spendOnly) < 0.01);
+const stoppedPay = ['2026-08-03', '2026-08-10', '2026-08-17'].map((d) => txn(d, 'OLD JOB WAGES', 200));
+expect('money from someone who’s stopped paying isn’t expected', Math.abs(poolOf([...daily, ...stoppedPay], '2026-10-01') - spendOnly) < 0.01);
+const threePay = ['2026-08-03', '2026-08-31', '2026-09-28'].map((d) => txn(d, 'ACME WAGES', 1100));
+expect('three 4-weekly wages are spotted', analyse(BLANK_ANSWERS, [...daily, ...threePay], '2026-10-01').recurring.some((r) => r.direction === 'in' && r.everyDays === 28));
+
+console.log('\n=== Winter energy');
+const flat = (label: string, amounts: [string, number][]) => amounts.map(([d, a]) => txn(d, label, a));
+const dd = flat('OCTOPUS ENERGY', [['2026-08-10', -90], ['2026-09-10', -90], ['2026-10-10', -90]]);
+const ddRun = analyse(BLANK_ANSWERS, dd, '2026-11-01').forecast.days.flatMap((d) => d.events).filter((e) => e.category === 'energy');
+expect('a fixed Direct Debit stays the same in winter', ddRun.length > 0 && ddRun.every((e) => Math.abs(e.amount + 90) < 0.01));
+const topUps = Array.from({ length: 12 }, (_, i) => txn(addDays('2026-08-03', i * 7), 'PREPAY POWER', -20));
+const topRun = analyse(BLANK_ANSWERS, topUps, '2026-10-26').forecast.days.flatMap((d) => d.events.map((e) => ({ ...e, date: d.date }))).filter((e) => e.category === 'energy');
+expect('meter top-ups cost more in winter', topRun.find((e) => e.date.startsWith('2026-12'))!.amount < -25 && topRun.find((e) => e.date.startsWith('2026-10'))!.amount === -20);
+const winterTops = analyse(BLANK_ANSWERS, [txn('2026-12-01', 'COFFEE SHOP', -1), txn('2026-12-08', 'EDF ENERGY', -26), txn('2026-12-20', 'COFFEE SHOP', -1)], '2026-12-30').inputs.pool.flat().reduce((s, d) => s + d.energy, 0);
+expect('winter spending isn’t counted as winter twice', Math.abs(winterTops - 20) < 0.01, String(winterTops));
+
+// ---- Back-test ----
+console.log('\n=== Back-test');
+const bt = backtest(getPersonas()[1].txns, { closing: getPersonas()[1].answers.balance });
+expect('back-test runs and reports percentages only', bt.horizons.length > 0 && bt.horizons.every((r) => Number.isInteger(r.medianErrorPct) && Number.isInteger(r.biasPct) && r.points > 0));
+expect('with too little history it says nothing', backtest(month).horizons.length === 0);
+const walk = Array.from({ length: 200 }, (_, i) => txn(addDays('2026-01-01', i), 'TESCO', -20));
+const steady = backtest(walk, { horizons: [14] });
+expect('a perfectly steady person is forecast closely', steady.horizons.length === 1 && steady.horizons[0].medianErrorPct <= 2 && Math.abs(steady.horizons[0].biasPct) <= 2, JSON.stringify(steady.horizons));
+expect('without a balance, risk isn’t tested', steady.risk === null);
+// Steady spending from a closing balance that crosses £0 near the end, so warnings can be checked exactly.
+const crossing = backtest(walk, { closing: -1000, horizons: [14] });
+expect('real balances are worked back from the closing balance', crossing.risk !== null && crossing.risk.points > 0 && crossing.risk.wentBelow > 0);
+expect('when money runs out, it was seen coming', crossing.risk !== null && crossing.risk.hits === crossing.risk.wentBelow && crossing.risk.hits <= crossing.risk.warnings);
+expect('days already below £0 aren’t counted as predictions', crossing.risk !== null && crossing.risk.alreadyBelow > 0);
+const oneOffBig = backtest([...walk, txn('2026-05-20', 'GARAGE', -1500)], { horizons: [30] });
+expect('a big one-off shows up as something the forecast didn’t predict', oneOffBig.unseen !== null && oneOffBig.unseen.oneOffsPct >= 0 && oneOffBig.horizons[0].biasPct >= 0, JSON.stringify(oneOffBig.unseen));
+// A £9,000 surprise near the end only hurts the few test dates just before it. If forecasts could see it coming, they'd all shift.
+const noPeek = backtest([...walk, txn('2026-07-15', 'FUTURE PAY', 9000)], { horizons: [7] });
+expect('a forecast can’t see the future', noPeek.horizons[0].points === backtest(walk, { horizons: [7] }).horizons[0].points && noPeek.horizons[0].medianErrorPct <= 2, JSON.stringify(noPeek.horizons));
 
 // ---- Other ----
 console.log('\n=== Other');

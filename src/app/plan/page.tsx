@@ -20,8 +20,8 @@ export default function Plan() {
   const { an, plan, profile, selectedIds } = money;
   const f = an.forecast;
   const savings = profile.answers.savings;
-  const sdBase = Math.round(safeDays(an, f, savings));
-  const sdPlan = Math.round(safeDays(an, plan, savings));
+  const sdBase = safeDays(an, f, savings);
+  const sdPlan = safeDays(an, plan, savings);
   const riskyNow = riskyDays(f);
   const riskyPlan = riskyDays(plan);
   const claims = an.actions.filter((a) => a.kind === 'claim');
@@ -32,18 +32,20 @@ export default function Plan() {
       <TopBar title="Plan" />
       <Summary text={summary.text} used={summary.used} writing={summary.writing} />
 
-      <Card>
-        <div className="grid grid-cols-2 gap-3">
-          <Stat label="Risky days in the next 90" value={`${riskyNow} → ${riskyPlan}`} tone={riskyPlan < riskyNow ? 'good' : undefined} />
-          <Stat label="Safe days in 90 days" value={`${sdBase} → ${sdPlan}`} tone={sdPlan > sdBase ? 'good' : undefined} />
-        </div>
-        <div className="mt-2">
-          <ForecastChart base={f} plan={plan} height={170} compact />
-        </div>
-        <Why label="What counts as a risky day?">
-          <p>A day with at least a 25% chance of your balance going below £0. Tick or untick a step below, and this updates straight away.</p>
-        </Why>
-      </Card>
+      {an.gaps.canJudge && (
+        <Card>
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label="Risky days in the next 90" value={`${riskyNow} → ${riskyPlan}`} tone={riskyPlan < riskyNow ? 'good' : undefined} />
+            {sdBase !== null && sdPlan !== null && <Stat label="Safe days in 90 days" value={`${Math.round(sdBase)} → ${Math.round(sdPlan)}`} tone={Math.round(sdPlan) > Math.round(sdBase) ? 'good' : undefined} />}
+          </div>
+          <div className="mt-2">
+            <ForecastChart base={f} plan={plan} height={170} compact />
+          </div>
+          <Why label="What counts as a risky day?">
+            <p>A day with at least a 25% chance of your balance going below £0. Tick or untick a step below, and this updates straight away.</p>
+          </Why>
+        </Card>
+      )}
 
       {claims.length > 0 && (
         <Card className="!py-2">

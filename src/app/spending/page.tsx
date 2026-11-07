@@ -133,15 +133,18 @@ function Overview({ an }: { an: Analysis }) {
   const left = an.summary.monthlyIn - an.summary.monthlyOut;
   const top = an.summary.byCategory[0]?.monthly ?? 1;
 
+  // With nothing to go on, a page of £0 would be a claim. The sentence says what would fill it in.
+  if (!an.txns.length) return <Summary text={understand.text} used={understand.used} writing={understand.writing} />;
+
   return (
     <div className="space-y-3">
       <Summary text={understand.text} used={understand.used} writing={understand.writing} />
 
       <Card>
         <div className="grid grid-cols-3 gap-2">
-          <Stat label="In a month" value={gbp(an.summary.monthlyIn)} />
+          <Stat label="In a month" value={an.gaps.income ? '–' : gbp(an.summary.monthlyIn)} />
           <Stat label="Out a month" value={gbp(an.summary.monthlyOut)} />
-          <Stat label="Left" value={gbp(left)} tone={left < 0 ? 'risk' : 'good'} />
+          <Stat label="Left" value={an.gaps.income ? '–' : gbp(left)} tone={an.gaps.income ? undefined : left < 0 ? 'risk' : 'good'} />
         </div>
         {an.summary.otherMoneyIn >= 1 && <Muted className="mt-2">Plus about {gbp(an.summary.otherMoneyIn)} a month in refunds and money from other people, which we don’t count as income.</Muted>}
         <div className="mt-4 space-y-3">
@@ -252,20 +255,22 @@ function Overview({ an }: { an: Analysis }) {
         </Card>
       )}
 
-      <Card>
-        <SectionTitle>Your money strengths</SectionTitle>
-        <Muted className="mb-3 mt-0.5">Scored 0 to 100, and for you only. These are never used for credit or pricing.</Muted>
-        <ScoreBars dims={an.fingerprint} />
-        <div className="mt-4 space-y-2">
-          {an.groups.map((g) => (
-            <div key={g.id} className="rounded-2xl bg-card-2 p-3 text-sm">
-              <div className="font-semibold">{g.label}</div>
-              <div className="text-mut">{g.why}</div>
-              <div className="mt-0.5">{g.adapts}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
+      {!an.gaps.income && (
+        <Card>
+          <SectionTitle>Your money strengths</SectionTitle>
+          <Muted className="mb-3 mt-0.5">Scored 0 to 100, and for you only. These are never used for credit or pricing.</Muted>
+          <ScoreBars dims={an.fingerprint} />
+          <div className="mt-4 space-y-2">
+            {an.groups.map((g) => (
+              <div key={g.id} className="rounded-2xl bg-card-2 p-3 text-sm">
+                <div className="font-semibold">{g.label}</div>
+                <div className="text-mut">{g.why}</div>
+                <div className="mt-0.5">{g.adapts}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

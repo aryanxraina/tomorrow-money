@@ -21,7 +21,6 @@ export type DayPool = DaySample[][]; // index by weekday 0..6
 export interface Adjust {
   dailyDelta?: number; // + less spending per day (savings), - more
   dropKeys?: string[]; // recurring items cancelled
-  scale?: Partial<Record<Category, number>>; // e.g. groceries 0.85
   ctSpread12?: boolean; // council tax over 12 months
   extra?: KnownItem[]; // extra one-offs (purchases, shocks, new income)
   ctMultiplier?: number; // council tax reductions/exemptions (0 = exempt)
@@ -36,7 +35,6 @@ export interface ForecastInput {
   seed?: number;
   recurring: Recurring[];
   pool: DayPool;
-  poolScaleByCategory?: Record<string, number>;
   known: KnownItem[];
   adjust?: Adjust;
   /** The person already pays council tax over 12 months, so there's no gap in February and March. */
@@ -67,35 +65,76 @@ export interface Forecast {
   endP50: number;
 }
 
-/** Everyday (non-bill) spending per weekday from the last 13 weeks. */
-export function buildDayPool(txns: Txn[], today: string, recurringKeys: Set<string>, keyOf: (t: Txn) => string): DayPool {
-  const pool: DayPool = [[], [], [], [], [], [], []];
-  const byDate = new Map<string, DaySample>();
+/** A single payment above this isn't expected to happen again, unless the same payer keeps paying. */
+const ONE_OFF_ABOVE = 250;
+
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+/**
+ * Which unscheduled transactions count as everyday cash flow, to be sampled into the future. It takes in
+ * money as well as money out: someone paid at uneven times by an agency has no schedule to find, and
+ * without this their forecast would show no income at all. Moves to savings aren't spending.
+ */
+export function everydayRule(txns: Txn[], today: string, keyOf: (t: Txn) => string): (t: Txn) => boolean {
   const { from, to } = dataWindow(txns, today, 91);
-  for (let d = from; d < to; d = addDays(d, 1)) byDate.set(d, { other: 0, energy: 0 });
+  const skipped = (t: Txn) => t.source === 'receipt' || t.category === 'savings' || t.category === 'internal'; // receipts enrich, they don't double count
+  const paidIn = new Map<string, string[]>();
   for (const t of txns) {
-    if (t.amount >= 0 || t.date < from || t.date >= to) continue;
-    if (t.source === 'receipt') continue; // receipts enrich, they don't double count
-    if (recurringKeys.has(keyOf(t))) continue;
-    if (t.category === 'transfers' || t.category === 'savings' || t.category === 'internal') continue;
-    if (Math.abs(t.amount) > 250) continue; // one-off big items are not "everyday"
-    const s = byDate.get(t.date);
-    if (!s) continue;
-    if (t.category === 'energy') s.energy += -t.amount;
-    else s.other += -t.amount;
+    if (t.amount <= 0 || t.date < from || t.date >= to || skipped(t)) continue;
+    paidIn.set(keyOf(t), [...(paidIn.get(keyOf(t)) ?? []), t.date]);
   }
-  for (const [d, s] of byDate) pool[weekday(d)].push(s);
-  return pool;
+  const stopped = new Set<string>();
+  for (const [key, dates] of paidIn) {
+    if (dates.length < 2) continue;
+    const seen = [...dates].sort();
+    const gaps = seen.slice(1).map((d, i) => diffDays(d, seen[i]));
+    if (diffDays(to, seen[seen.length - 1]) > Math.max(14, median(gaps) * 2 + 7)) stopped.add(key);
+  }
+  return (t) => {
+    if (skipped(t)) return false;
+    if (t.amount < 0) return -t.amount <= ONE_OFF_ABOVE;
+    const key = keyOf(t);
+    if (stopped.has(key)) return false;
+    return t.amount <= ONE_OFF_ABOVE || (paidIn.get(key)?.length ?? 0) >= (t.category === 'income' ? 2 : 3);
+  };
 }
 
+/** How much more energy costs in the colder months. An assumption, and the forecast explains it. */
 const winterFactor = (d: string) => {
   const m = month(d);
   return m === 12 || m === 1 || m === 2 ? 1.3 : m === 11 || m === 3 ? 1.15 : 1;
 };
 
+/** Everyday cash flow per weekday from the last 13 weeks. Energy is held at its base level, without the season. */
+export function buildDayPool(txns: Txn[], today: string, recurringKeys: Set<string>, keyOf: (t: Txn) => string): DayPool {
+  const pool: DayPool = [[], [], [], [], [], [], []];
+  const byDate = new Map<string, DaySample>();
+  const { from, to } = dataWindow(txns, today, 91);
+  for (let d = from; d < to; d = addDays(d, 1)) byDate.set(d, { other: 0, energy: 0 });
+  const isEveryday = everydayRule(txns, today, keyOf);
+  for (const t of txns) {
+    const s = byDate.get(t.date);
+    if (!s || recurringKeys.has(keyOf(t)) || !isEveryday(t)) continue;
+    if (t.amount < 0 && t.category === 'energy') s.energy -= t.amount / winterFactor(t.date);
+    else s.other -= t.amount;
+  }
+  for (const [d, s] of byDate) pool[weekday(d)].push(s);
+  return pool;
+}
+
+/** Energy that follows how much you use, such as meter top-ups, costs more in winter. A fixed Direct Debit doesn't. */
+const followsTheSeason = (r: Recurring) => r.category === 'energy' && r.direction === 'out' && (r.cadence === 'days' || r.variable);
+
+/** Enough for a risk figure to be good to about 3 points either way, while staying quick on a phone. */
+export const FORECAST_RUNS = 1000;
+
 export function runForecast(input: ForecastInput): Forecast {
   const days = input.days ?? 90;
-  const runs = input.runs ?? 400;
+  const runs = input.runs ?? FORECAST_RUNS;
   const r = rng(input.seed ?? 7);
   const adj = input.adjust || {};
   const end = addDays(input.start, days);
@@ -113,15 +152,18 @@ export function runForecast(input: ForecastInput): Forecast {
       fixed = rec.last * mult * (adj.ctSpread12 && !input.ctAlready12 ? 10 / 12 : 1);
       if (fixed === 0) continue;
     }
-    const scale = rec.direction === 'out' ? adj.scale?.[rec.category] ?? 1 : 1;
+    const seasonal = followsTheSeason(rec);
+    if (seasonal && fixed !== undefined) fixed /= winterFactor(rec.lastDate);
+    const samples = rec.variable ? rec.amounts.map((a, i) => (seasonal ? a / winterFactor(rec.dates[i]) : a)).slice(-12) : undefined;
     for (const d of dates) {
+      const season = seasonal ? winterFactor(d) : 1;
       sched.push({
         offset: diffDays(d, input.start),
         label: rec.label,
         category: rec.category,
         dir: rec.direction === 'in' ? 1 : -1,
-        fixed: fixed !== undefined ? fixed * scale : undefined,
-        samples: rec.variable ? rec.amounts.slice(-12).map((a) => a * scale) : undefined,
+        fixed: fixed !== undefined ? fixed * season : undefined,
+        samples: samples?.map((a) => a * season),
       });
     }
   }
@@ -137,7 +179,6 @@ export function runForecast(input: ForecastInput): Forecast {
   const dateOf = (i: number) => addDays(input.start, i);
   const wd = Array.from({ length: days }, (_, i) => weekday(dateOf(i)));
   const wf = Array.from({ length: days }, (_, i) => winterFactor(dateOf(i)));
-  const groceryScale = adj.scale?.groceries ?? 1;
   const dailyDelta = adj.dailyDelta ?? 0;
 
   const values: Float64Array[] = Array.from({ length: days }, () => new Float64Array(runs));
@@ -151,7 +192,7 @@ export function runForecast(input: ForecastInput): Forecast {
       const pool = input.pool[wd[i]];
       if (pool.length) {
         const day = pool[Math.floor(r.next() * pool.length)];
-        bal -= day.other * groceryScale + day.energy * wf[i];
+        bal -= day.other + day.energy * wf[i];
       }
       bal += dailyDelta;
       values[i][run] = bal;
