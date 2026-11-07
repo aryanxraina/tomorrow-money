@@ -1,10 +1,32 @@
-import type { Answers, BasketItem, Category, Persona, Txn } from '../types';
-import { addDays, addMonths, month, toDate, fmt, TODAY } from '../engine/dates';
-import { categorise } from '../engine/categorise';
-import { rng, round2 } from '../engine/rng';
+import type { Answers, Category, Txn } from '../../src/lib/types';
+import { addDays, addMonths, month, toDate, fmt } from '../../src/lib/engine/dates';
+import { categorise } from '../../src/lib/engine/categorise';
+import { rng, round2 } from '../../src/lib/engine/rng';
 
-// Six months of synthetic bank history ending yesterday. Every pattern the app
-// should find is planted on purpose, so the demo is deterministic.
+/** The date these made-up people's histories end, so engine checks give the same answer every time. */
+export const FIXTURE_TODAY = '2026-11-07';
+const TODAY = FIXTURE_TODAY;
+
+export interface BasketItem {
+  name: string;
+  qty: number;
+  basePrice: number;
+}
+
+export interface Persona {
+  id: string;
+  name: string;
+  age: number;
+  city: string;
+  hero: string;
+  tagline: string;
+  answers: Answers;
+  txns: Txn[];
+  basket: BasketItem[];
+  demoLocation: { lat: number; lng: number; label: string };
+}
+
+// Test data only, never shown in the app: six months of made-up bank history with patterns planted on purpose.
 export const HISTORY_START = addDays(TODAY, -183);
 export const HISTORY_END = addDays(TODAY, -1);
 
@@ -42,27 +64,32 @@ function builder(pid: string, seed: number) {
 
 const baseAnswers: Answers = {
   name: '',
+  nation: 'england',
+  ageBand: null,
   adults: 1,
   children: 0,
   childUnder4: false,
   incomeTypes: [],
   monthlyIncome: 0,
+  payDay: null,
   housing: 'rent_private',
   housingCost: 0,
+  rentDay: null,
   energyPayment: 'direct_debit',
   foodWeekly: 50,
   debts: [],
   debtRepayMonthly: 0,
   savings: 0,
   balance: 0,
+  balanceDate: null,
   postcode: '',
   councilTaxMonthly: 0,
+  ctInstalments: null,
   ctSingleDiscount: false,
   ctReduction: false,
   allStudents: false,
   onBenefits: false,
   barriers: [],
-  language: 'en',
   worry: '',
   yearlyBills: [],
   futureIncome: [],
@@ -268,7 +295,6 @@ function kacper(): Persona {
     balance: 188,
     postcode: 'PE1',
     barriers: ['language', 'new_to_uk', 'no_bank_history'],
-    language: 'pl',
     worry: 'Moje godziny się zmieniają. Wysyłam pieniądze do rodziny i nie wiem, jakie mam prawa.',
   };
   const basket: BasketItem[] = [

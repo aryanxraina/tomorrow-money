@@ -1,4 +1,4 @@
-// Demo-only sample data. Every sample is clearly labelled in the UI.
+// Test data only, never shown in the app: made-up emails and receipts.
 
 export interface SampleEmail {
   id: string;
@@ -96,45 +96,3 @@ export interface ParsedReceipt {
   total: number;
   paymentMethod?: string;
 }
-
-export const SAMPLE_RECEIPTS: Record<string, { image: string; label: string; parsed: ParsedReceipt }> = {
-  express: {
-    image: '/samples/receipt-express.png',
-    label: 'Sample receipt: corner shop',
-    parsed: {
-      merchant: 'QuickStop Express',
-      date: '2026-11-06',
-      items: [
-        { name: 'Semi-skimmed milk 4pt', qty: 1, price: 1.95, category: 'groceries' },
-        { name: 'White bread 800g', qty: 1, price: 1.45, category: 'groceries' },
-        { name: 'Free range eggs x6', qty: 1, price: 2.35, category: 'groceries' },
-        { name: 'Bananas x5', qty: 1, price: 1.25, category: 'groceries' },
-        { name: 'Pasta 500g', qty: 2, price: 2.3, category: 'groceries' },
-        { name: 'Washing up liquid', qty: 1, price: 1.85, category: 'household' },
-      ],
-      total: 11.15,
-      paymentMethod: 'Card',
-    },
-  },
-  budget: {
-    image: '/samples/receipt-budget.png',
-    label: 'Sample receipt: supermarket',
-    parsed: {
-      merchant: 'BudgetMart',
-      date: '2026-11-05',
-      items: [
-        { name: 'Semi-skimmed milk 4pt', qty: 1, price: 1.55, category: 'groceries' },
-        { name: 'Pasta 500g', qty: 2, price: 1.5, category: 'groceries' },
-        { name: 'Chicken breast 1kg', qty: 1, price: 5.49, category: 'groceries' },
-        { name: 'Basmati rice 1kg', qty: 1, price: 1.39, category: 'groceries' },
-        { name: 'Chopped tomatoes 4pk', qty: 1, price: 1.4, category: 'groceries' },
-        { name: 'Cheddar 400g', qty: 1, price: 2.89, category: 'groceries' },
-        { name: 'Apples x6', qty: 1, price: 1.29, category: 'groceries' },
-        { name: 'Nappies size 4', qty: 1, price: 3.95, category: 'baby' },
-        { name: 'Toilet roll 9pk', qty: 1, price: 3.49, category: 'household' },
-      ],
-      total: 22.95,
-      paymentMethod: 'Card',
-    },
-  },
-};

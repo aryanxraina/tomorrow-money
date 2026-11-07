@@ -1,15 +1,16 @@
 'use client';
 
+import { Camera, Plus, X } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
-import { AiBadge, AiWriting, Button, Card, inputCls, Muted, Pill, type Used } from '@/components/ui';
-import { SAMPLE_RECEIPTS, type ParsedReceipt } from '@/lib/data/samples';
-import { diffDays, gbp, shortDate, TODAY } from '@/lib/engine/dates';
-import { postJSON, useAiStatus, useEffectiveMode, useProfile } from '@/lib/hooks';
+import { AiWriting, Button, Card, Chip, Field, inputCls, Muted, NoProfile, Row, SectionTitle, TopBar } from '@/components/ui';
+import { diffDays, gbp, shortDate, todayISO } from '@/lib/engine/dates';
+import type { ParsedReceipt } from '@/lib/engine/receipt';
+import { postJSON, useEffectiveMode, useMoney } from '@/lib/hooks';
 import { useStore } from '@/lib/store';
 import type { Txn } from '@/lib/types';
 
 async function fileToDataUrl(file: Blob): Promise<string> {
-  // shrink big phone photos so they upload fast and fit model limits
+  // Shrink big phone photos so they're quick to read.
   const img = await createImageBitmap(file);
   const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
   const c = document.createElement('canvas');
@@ -19,42 +20,35 @@ async function fileToDataUrl(file: Blob): Promise<string> {
   return c.toDataURL('image/jpeg', 0.85);
 }
 
+const blankReceipt = (): ParsedReceipt => ({ merchant: '', date: todayISO(), items: [{ name: '', qty: 1, price: 0 }], total: 0 });
+
 export default function Snap() {
-  const profile = useProfile();
+  const money = useMoney();
   const mode = useEffectiveMode();
-  const status = useAiStatus();
   const addTxn = useStore((s) => s.addTxn);
-  const addedAll = useStore((s) => s.added);
-  const added = useMemo(() => (profile ? addedAll[profile.id] || [] : []), [addedAll, profile]);
+  const txns = useStore((s) => s.txns);
   const fileRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [rec, setRec] = useState<ParsedReceipt | null>(null);
-  const [used, setUsed] = useState<Used | null>(null);
-  const [model, setModel] = useState<string | undefined>();
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
-  const read = async (image: string, sampleId?: string) => {
+  const read = async (image: string) => {
     setBusy(true);
     setErr(null);
     setRec(null);
     setSaved(null);
     try {
-      const r = await postJSON<{ receipt: ParsedReceipt | null; used: Used; model?: string; error?: string }>('/api/receipt', { mode, image, sampleId });
-      if (r.receipt) {
-        setRec({ ...r.receipt, date: r.receipt.date || TODAY });
-        setUsed(r.used);
-        setModel(r.model);
-      } else {
-        setErr(r.error || 'Could not read that receipt.');
-        setRec({ merchant: '', date: TODAY, items: [{ name: '', qty: 1, price: 0 }], total: 0 });
-        setUsed(null);
+      const r = await postJSON<{ receipt: ParsedReceipt | null; error?: string }>('/api/receipt', { mode, image });
+      if (r.receipt) setRec({ ...r.receipt, date: r.receipt.date || todayISO() });
+      else {
+        setErr('We couldn’t read this one. You can type the items in below instead.');
+        setRec(blankReceipt());
       }
     } catch {
-      setErr('Could not read that receipt.');
-      setRec({ merchant: '', date: TODAY, items: [{ name: '', qty: 1, price: 0 }], total: 0 });
-      setUsed(null);
+      setErr('We couldn’t read this one. You can type the items in below instead.');
+      setRec(blankReceipt());
     } finally {
       setBusy(false);
     }
@@ -62,14 +56,14 @@ export default function Snap() {
 
   const total = rec ? rec.items.reduce((s, i) => s + (Number(i.price) || 0), 0) : 0;
   const match = useMemo(() => {
-    if (!rec || !profile) return null;
-    return profile.txns.find((t) => t.source === 'bank' && Math.abs(t.amount + total) < 0.05 && Math.abs(diffDays(t.date, rec.date)) <= 2) || null;
-  }, [rec, profile, total]);
+    if (!rec) return null;
+    return txns.find((t) => t.source === 'bank' && Math.abs(t.amount + total) < 0.05 && Math.abs(diffDays(t.date, rec.date)) <= 2) || null;
+  }, [rec, txns, total]);
 
-  // Price tracker: every item you've snapped, with the lowest price seen.
+  // What you've paid for each item, from your own receipts.
   const items = useMemo(() => {
     const m = new Map<string, { name: string; last: number; where: string; date: string; low: number; lowWhere: string; count: number }>();
-    for (const t of added) {
+    for (const t of txns) {
       for (const it of t.items || []) {
         const unit = it.price / (it.qty || 1);
         const k = it.name.toLowerCase().replace(/[^a-z ]/g, '').trim();
@@ -84,20 +78,14 @@ export default function Snap() {
       }
     }
     return [...m.values()];
-  }, [added]);
+  }, [txns]);
 
-  if (!profile)
-    return (
-      <Card>
-        <p>Pick a demo person or do your check-in first.</p>
-      </Card>
-    );
+  if (!money) return <NoProfile />;
 
   const save = () => {
     if (!rec) return;
-    const id = `rcpt-${Date.now()}`;
     const t: Txn = {
-      id,
+      id: `rcpt-${Date.now()}`,
       date: rec.date,
       description: (rec.merchant || 'Receipt').toUpperCase(),
       merchant: rec.merchant,
@@ -106,18 +94,17 @@ export default function Snap() {
       source: match ? 'receipt' : 'manual',
       items: rec.items.filter((i) => i.name),
     };
-    addTxn(profile.id, t);
-    setSaved(match ? `Items attached to your card payment on ${shortDate(match.date)}. Not counted twice.` : 'Added to your tracker. Your forecast now includes it.');
+    addTxn(t);
+    setSaved(match ? `Items attached to your card payment on ${shortDate(match.date)}, so it isn’t counted twice.` : 'Added. Your forecast now includes it.');
     setRec(null);
     setPreview(null);
   };
 
+  const setItem = (i: number, change: Partial<ParsedReceipt['items'][number]>) => rec && setRec({ ...rec, items: rec.items.map((x, j) => (j === i ? { ...x, ...change } : x)) });
+
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">Snap & Receipt</h1>
-        <Muted>Photograph a receipt. We turn it into a list you can check, and only add it with your permission.</Muted>
-      </div>
+    <div className="space-y-3">
+      <TopBar title="Snap a receipt" back="/home" />
 
       <Card className="space-y-3">
         <input
@@ -125,9 +112,11 @@ export default function Snap() {
           type="file"
           accept="image/*"
           capture="environment"
-          className="hidden"
+          aria-label="Take or choose a photo of a receipt"
+          className="sr-only"
           onChange={async (e) => {
             const f = e.target.files?.[0];
+            e.target.value = '';
             if (!f) return;
             const url = await fileToDataUrl(f);
             setPreview(url);
@@ -135,117 +124,97 @@ export default function Snap() {
           }}
         />
         <Button onClick={() => fileRef.current?.click()} className="w-full">
-          📷 Snap or upload a receipt
+          <Camera size={18} aria-hidden /> Take a photo
         </Button>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(SAMPLE_RECEIPTS).map(([id, s]) => (
-            <Button
-              key={id}
-              variant="soft"
-              className="!px-3 !py-1.5"
-              onClick={async () => {
-                const blob = await (await fetch(s.image)).blob();
-                const url = await fileToDataUrl(blob);
-                setPreview(url);
-                read(url, id);
-              }}
-            >
-              Try: {s.label}
-            </Button>
-          ))}
-        </div>
-        <Muted>
-          {mode === 'local' || !status?.cloud ? 'On-device: the photo stays on this device.' : 'Cloud AI reads the photo.'} Sample receipts are labelled “demo”.
-        </Muted>
+        <Button
+          variant="soft"
+          className="w-full"
+          onClick={() => {
+            setPreview(null);
+            setErr(null);
+            setSaved(null);
+            setRec(blankReceipt());
+          }}
+        >
+          Type it in instead
+        </Button>
+        <Muted>We turn your photo into a list for you to check, and nothing is added without your say-so. The photo stays on this device.</Muted>
       </Card>
 
       {preview && (
         <Card className="flex justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview} alt="Receipt" className="max-h-72 rounded-lg" />
+          <img src={preview} alt="Your receipt" className="max-h-72 rounded-xl" />
         </Card>
       )}
       {busy && (
         <Card>
-          <AiWriting mode={mode} what="Reading your receipt" />
+          <AiWriting what="Reading your receipt" />
         </Card>
       )}
-      {err && <Card className="bg-amber-50 text-sm text-amber-900">{err} Type the items below instead.</Card>}
-      {saved && <Card className="bg-emerald-50 text-sm text-emerald-900">✓ {saved}</Card>}
+      {err && <p className="chip-warn rounded-2xl p-3 text-sm">{err}</p>}
+      {saved && (
+        <p role="status" className="chip-good rounded-2xl p-3 text-sm font-medium">
+          {saved}
+        </p>
+      )}
 
       {rec && (
         <Card className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Is this right?</h2>
-            <AiBadge used={used} model={model} />
-          </div>
+          <SectionTitle>Is this right?</SectionTitle>
           <div className="grid grid-cols-2 gap-2">
-            <input className={inputCls} value={rec.merchant} placeholder="Shop" onChange={(e) => setRec({ ...rec, merchant: e.target.value })} />
-            <input type="date" className={inputCls} value={rec.date} onChange={(e) => setRec({ ...rec, date: e.target.value })} />
+            <Field label="Shop">
+              <input className={inputCls} value={rec.merchant} onChange={(e) => setRec({ ...rec, merchant: e.target.value })} />
+            </Field>
+            <Field label="Date">
+              <input type="date" className={inputCls} value={rec.date} onChange={(e) => setRec({ ...rec, date: e.target.value })} />
+            </Field>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {rec.items.map((it, i) => (
-              <div key={i} className="grid grid-cols-[64px_1fr_28px] gap-2 border-b border-slate-100 pb-2 sm:grid-cols-[1fr_64px_96px_28px] sm:border-0 sm:pb-0">
-                <input aria-label="Item" className={`${inputCls} col-span-3 sm:col-span-1`} value={it.name} placeholder="Item" onChange={(e) => setRec({ ...rec, items: rec.items.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })} />
-                <input aria-label="Quantity" type="number" className={inputCls} value={it.qty} onChange={(e) => setRec({ ...rec, items: rec.items.map((x, j) => (j === i ? { ...x, qty: Number(e.target.value) } : x)) })} />
-                <input
-                  aria-label="Price"
-                  type="number"
-                  step="0.01"
-                  className={inputCls}
-                  value={it.price}
-                  onChange={(e) => setRec({ ...rec, items: rec.items.map((x, j) => (j === i ? { ...x, price: Number(e.target.value) } : x)) })}
-                />
-                <button className="text-slate-400" aria-label="Remove item" onClick={() => setRec({ ...rec, items: rec.items.filter((_, j) => j !== i) })}>
-                  ✕
+              <div key={i} className="grid grid-cols-[1fr_96px_32px] items-center gap-2">
+                <input aria-label="Item" placeholder="Item" className={inputCls} value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} />
+                <input aria-label="Price" placeholder="£" type="number" inputMode="decimal" step="0.01" className={`${inputCls} num`} value={it.price || ''} onChange={(e) => setItem(i, { price: Number(e.target.value) })} />
+                <button type="button" className="grid h-8 w-8 place-items-center text-mut" aria-label={`Remove ${it.name || 'item'}`} onClick={() => setRec({ ...rec, items: rec.items.filter((_, j) => j !== i) })}>
+                  <X size={18} aria-hidden />
                 </button>
               </div>
             ))}
-            <Button variant="ghost" className="!px-2 !py-1" onClick={() => setRec({ ...rec, items: [...rec.items, { name: '', qty: 1, price: 0 }] })}>
-              + Add item
-            </Button>
+            <button type="button" className="flex items-center gap-1.5 text-sm font-medium text-link" onClick={() => setRec({ ...rec, items: [...rec.items, { name: '', qty: 1, price: 0 }] })}>
+              <Plus size={16} aria-hidden /> Add an item
+            </button>
           </div>
-          <div className="flex justify-between border-t pt-2 font-semibold">
+          <div className="num flex justify-between border-t border-hair pt-3 font-semibold">
             <span>Total</span>
             <span>{gbp(total, 2)}</span>
           </div>
-          {rec.total > 0 && Math.abs(rec.total - total) > 0.05 ? <Muted>The receipt says {gbp(rec.total, 2)}. Check the items above.</Muted> : null}
+          {rec.total > 0 && Math.abs(rec.total - total) > 0.05 && <p className="chip-warn rounded-2xl p-3 text-sm">The receipt says {gbp(rec.total, 2)}, so please check the items above.</p>}
           {match ? (
-            <div className="rounded-xl bg-sky-50 p-3 text-sm text-sky-900">
-              This matches your card payment “{match.description}” on {shortDate(match.date)}. We’ll attach the items to it so it isn’t counted twice.
-            </div>
+            <p className="rounded-2xl bg-card-2 p-3 text-sm">This matches a card payment to {match.merchant || match.description} on {shortDate(match.date)}. We’ll attach the items to it, so it isn’t counted twice.</p>
           ) : (
-            <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">No matching card payment found, so this will be added as a new spend (for example, cash).</div>
+            total > 0 && <p className="rounded-2xl bg-card-2 p-3 text-sm">We can’t see a matching card payment, so this will count as new spending, such as cash.</p>
           )}
           <div className="flex gap-2">
-            <Button onClick={save} className="flex-1">
-              Yes, add to my tracker
+            <Button onClick={save} disabled={total <= 0} className="flex-1">
+              Add it
             </Button>
             <Button variant="ghost" onClick={() => setRec(null)}>
-              No thanks
+              Cancel
             </Button>
           </div>
         </Card>
       )}
 
       <Card>
-        <h2 className="font-semibold">Price tracker: things you buy</h2>
+        <SectionTitle>Prices you’ve paid</SectionTitle>
         {items.length ? (
-          <div className="mt-2 divide-y divide-slate-100">
+          <div className="mt-1 divide-y divide-hair">
             {items.map((i) => (
-              <div key={i.name} className="flex items-center justify-between py-2 text-sm">
-                <div>
-                  <div className="font-medium">{i.name}</div>
-                  <div className="text-xs text-slate-500">
-                    last {gbp(i.last, 2)} at {i.where}
-                  </div>
-                </div>
-                {i.low < i.last - 0.01 ? <Pill tone="green">{gbp(i.low, 2)} at {i.lowWhere}</Pill> : <Pill>{i.count}× bought</Pill>}
-              </div>
+              <Row key={i.name} title={i.name} sub={`Last ${gbp(i.last, 2)} at ${i.where}`} right={i.low < i.last - 0.01 ? <Chip tone="good">{gbp(i.low, 2)} at {i.lowWhere}</Chip> : <span className="text-[13px] font-medium text-mut">Bought {i.count}×</span>} />
             ))}
           </div>
         ) : (
-          <Muted className="mt-1">Snap a receipt to start tracking prices. Snap both samples to see a cheaper price spotted.</Muted>
+          <Muted className="mt-1">Snap a few receipts to see what you pay for things, and where they were cheapest.</Muted>
         )}
       </Card>
     </div>

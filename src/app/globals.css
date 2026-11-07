@@ -1,14 +1,171 @@
 @import "tailwindcss";
 
+/* Design tokens: the "Pine" look. Components only ever use these, so light and dark stay in step. */
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --pg: #eaf0ea;
+  --card: #ffffff;
+  --card-2: #f1f5f1;
+  --ink: #10241c;
+  --mut: #56695f;
+  --hair: #e0e8e1;
+  --hero: #123c2f;
+  --hero-ink: #f1f7f2;
+  --hero-mut: #a9c2b5;
+  --hero-soft: rgba(255, 255, 255, 0.1);
+  --lime: #c9ee6a;
+  --lime-ink: #17331f;
+  --link: #1a6e4c;
+  --good: #1a6e4c;
+  --warn: #8f5c05;
+  --risk: #c5402a;
+  --strip-good: #1e7d57;
+  --strip-warn: #e4a32d;
+  --strip-risk: #d94f30;
+  --chart-line: #123c2f;
+  --chart-band: rgba(18, 60, 47, 0.12);
+  --chart-plan: #1e7d57;
+  --chart-axis: #56695f;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --pg: #0a1510;
+    --card: #13231c;
+    --card-2: #1b2f26;
+    --ink: #e9f2ec;
+    --mut: #9ab0a4;
+    --hair: #20342a;
+    --hero: #0f3327;
+    --link: #a7dc8c;
+    --good: #7fd6aa;
+    --warn: #ecb95a;
+    --risk: #ff8a6e;
+    --strip-good: #3fae80;
+    --strip-warn: #e4a32d;
+    --strip-risk: #f0694a;
+    --chart-line: #c9ee6a;
+    --chart-band: rgba(201, 238, 106, 0.14);
+    --chart-plan: #7fd6aa;
+    --chart-axis: #9ab0a4;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --pg: #0a1510;
+  --card: #13231c;
+  --card-2: #1b2f26;
+  --ink: #e9f2ec;
+  --mut: #9ab0a4;
+  --hair: #20342a;
+  --hero: #0f3327;
+  --link: #a7dc8c;
+  --good: #7fd6aa;
+  --warn: #ecb95a;
+  --risk: #ff8a6e;
+  --strip-good: #3fae80;
+  --strip-warn: #e4a32d;
+  --strip-risk: #f0694a;
+  --chart-line: #c9ee6a;
+  --chart-band: rgba(201, 238, 106, 0.14);
+  --chart-plan: #7fd6aa;
+  --chart-axis: #9ab0a4;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-pg: var(--pg);
+  --color-card: var(--card);
+  --color-card-2: var(--card-2);
+  --color-ink: var(--ink);
+  --color-mut: var(--mut);
+  --color-hair: var(--hair);
+  --color-hero: var(--hero);
+  --color-hero-ink: var(--hero-ink);
+  --color-hero-mut: var(--hero-mut);
+  --color-hero-soft: var(--hero-soft);
+  --color-lime: var(--lime);
+  --color-lime-ink: var(--lime-ink);
+  --color-link: var(--link);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-risk: var(--risk);
+  --font-sans: "DM Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", "DM Sans Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  background: var(--pg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", "Noto Nastaliq Urdu", Arial, sans-serif;
+  background: var(--pg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
 
-details > summary::-webkit-details-marker { display: none; }
+/* Money lines up in columns, and the pence sit quietly next to the pounds. */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+.pence {
+  font-size: 0.5em;
+  letter-spacing: 0;
+  opacity: 0.78;
+  margin-left: 1px;
+}
+
+.chip-risk {
+  color: var(--risk);
+  background: color-mix(in srgb, var(--risk) 13%, transparent);
+}
+.chip-warn {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+}
+.chip-good {
+  color: var(--good);
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+}
+.chip-plain {
+  color: var(--mut);
+  background: var(--card-2);
+}
+
+:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+button,
+a,
+summary,
+label {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Horizontal chip rows scroll without showing a bar. */
+.no-bar {
+  scrollbar-width: none;
+}
+.no-bar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

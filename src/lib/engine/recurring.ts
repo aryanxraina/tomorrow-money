@@ -21,13 +21,27 @@ export interface Recurring {
 // Spending that is frequent but not a "bill": treated as everyday spending instead.
 const NOT_BILLS: Category[] = ['groceries', 'eating_out', 'shopping', 'cash', 'other', 'kids'];
 
+// Words banks add around the merchant's name, which would otherwise split one merchant into many.
+const BANK_WORDING =
+  /\b(?:CARD PAYMENT TO|CARD PAYMENT|CARD PURCHASE|PURCHASE AT|CONTACTLESS|POS|VISA|DEBIT CARD|DIRECT DEBIT PAYMENT TO|DIRECT DEBIT TO|DIRECT DEBIT|STANDING ORDER TO|STANDING ORDER|FASTER PAYMENTS? RECEIPT FROM|FASTER PAYMENTS? RECEIPT|FASTER PAYMENTS? TO|FASTER PAYMENTS? FROM|FASTER PAYMENTS?|BILL PAYMENT VIA FASTER PAYMENT TO|BILL PAYMENT TO|BILL PAYMENT|BANK GIRO CREDIT|BANK CREDIT|PAYMENT TO|PAYMENT FROM|GOOGLE PAY|APPLE PAY|DD|SO|FPI|FPO|BGC|BP|DEB|REF|REFERENCE|MANDATE NO|ON|GBP|GB|CD|RATE)\b/g;
+
 export function merchantKey(description: string) {
-  return description
-    .toUpperCase()
-    .replace(/[^A-Z ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const letters = description.toUpperCase().replace(/[^A-Z ]/g, ' ');
+  const cleaned = letters.replace(BANK_WORDING, ' ').replace(/\s+/g, ' ').trim();
+  // A description that was nothing but bank wording keeps its original words.
+  return cleaned || letters.replace(/\s+/g, ' ').trim();
 }
+
+/** A readable merchant name for lists, without the bank's extra wording. */
+export const merchantLabel = (description: string) => {
+  const key = merchantKey(description);
+  // "NETFLIX.COM" reads better as "Netflix", as long as something is left.
+  const trimmed = key.replace(/(?:\s(?:COM|CO UK|ORG UK|UK|LTD|LIMITED|PLC))+$/, '');
+  return titleCase(trimmed || key);
+};
+
+/** The key a person's category correction is stored under. */
+export const txnKey = (t: { description: string; amount: number }) => `${merchantKey(t.description)}${t.amount > 0 ? '|in' : '|out'}`;
 
 const median = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b);
@@ -40,21 +54,23 @@ export function detectRecurring(txns: Txn[], today: string): Recurring[] {
   for (const t of txns) {
     if (t.source === 'receipt') continue;
     if (NOT_BILLS.includes(t.category)) continue;
-    if (t.category === 'fees') continue;
+    if (t.category === 'fees' || t.category === 'internal' || t.category === 'refund') continue;
     const k = merchantKey(t.description) + (t.amount > 0 ? '|in' : '|out');
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k)!.push(t);
   }
+  // Judged from the newest data held, not from today, or an older statement would look like everything stopped.
+  const newest = txns.reduce((m, t) => (t.date > m && t.date <= today ? t.date : m), '0000-00-00');
   const out: Recurring[] = [];
   for (const [key, list] of groups) {
     list.sort((a, b) => (a.date < b.date ? -1 : 1));
     if (list.length < 2) continue;
     const last = list[list.length - 1];
-    if (diffDays(today, last.date) > 45) continue; // stopped
     const dates = list.map((t) => t.date);
     const amounts = list.map((t) => Math.abs(t.amount));
     const intervals = dates.slice(1).map((d, i) => diffDays(d, dates[i]));
     const medInt = median(intervals);
+    if (diffDays(newest, last.date) > Math.max(10, medInt * 1.6 + 7)) continue; // stopped
     const doms = dates.map(dayOfMonth);
     const medDom = Math.round(median(doms));
     const domSteady = doms.filter((d) => Math.abs(d - medDom) <= 3).length / doms.length >= 0.75;
@@ -84,7 +100,7 @@ export function detectRecurring(txns: Txn[], today: string): Recurring[] {
     }
     out.push({
       key,
-      label: titleCase(last.description),
+      label: merchantLabel(last.description),
       category: last.category,
       direction: last.amount > 0 ? 'in' : 'out',
       cadence,
@@ -112,6 +128,11 @@ export function titleCase(s: string) {
     .replace(/\bCc Ctax\b/, 'Council Tax')
     .replace(/\bSlc\b/, 'SLC')
     .replace(/\bPl\b/, 'PL');
+}
+
+/** Did the person pay council tax in February or March? Then they pay over 12 months, not the usual 10. */
+export function paysCouncilTaxOver12(txns: Txn[]): boolean {
+  return txns.some((t) => t.category === 'council_tax' && t.amount < 0 && [2, 3].includes(month(t.date)));
 }
 
 /** Next due dates of a recurring item between (from, to]. */

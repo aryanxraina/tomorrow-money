@@ -1,8 +1,7 @@
 import { ask, aiStatus, extractJson, localOcr, readBody, safeMode, type Mode, type Used } from '@/lib/ai/provider';
 import { RECEIPT_SYSTEM, RECEIPT_TEXT_SYSTEM } from '@/lib/ai/prompts';
 import { inventedNumbers } from '@/lib/ai/guard';
-import { SAMPLE_RECEIPTS, type ParsedReceipt } from '@/lib/data/samples';
-import { parseReceiptText } from '@/lib/engine/receipt';
+import { parseReceiptText, type ParsedReceipt } from '@/lib/engine/receipt';
 
 /** Validates model JSON. The code, not the model, decides whether it is a usable receipt. */
 function normalise(parsed: ParsedReceipt | null): ParsedReceipt | null {
@@ -53,7 +52,7 @@ async function readOnDevice(dataUrl: string) {
 }
 
 export async function POST(req: Request) {
-  const body = await readBody<{ mode: Mode; image: string; sampleId?: string }>(req);
+  const body = await readBody<{ mode: Mode; image: string }>(req);
   if (!body) return Response.json({ receipt: null, used: 'rules', error: 'Bad request.' }, { status: 400 });
   const mode = safeMode(body.mode);
   const m = body.image?.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
@@ -73,7 +72,5 @@ export async function POST(req: Request) {
       console.warn('[receipt] on-device failed', (e as Error).message);
     }
   }
-  const sample = body.sampleId ? SAMPLE_RECEIPTS[body.sampleId] : undefined;
-  if (sample) return Response.json({ receipt: sample.parsed, used: 'rules', note: 'Sample receipt read without AI' });
   return Response.json({ receipt: null, used: 'rules', error: 'Could not read this receipt. You can type the items instead.' }, { status: 422 });
 }

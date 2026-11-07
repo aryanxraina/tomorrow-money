@@ -2,9 +2,6 @@ import type { Lang } from '../types';
 
 export const LANG_NAME: Record<Lang, string> = {
   en: 'English',
-  pl: 'Polish',
-  hi: 'Hindi',
-  ur: 'Urdu',
 };
 
 const CORE = `You are a kind, plain-English money coach for people under financial pressure in the UK.
@@ -29,6 +26,7 @@ export function agentSystem(lang: Lang, context: unknown) {
   return `${CORE}
 Write in ${LANG_NAME[lang]}. Answer in at most 5 short sentences, then give ONE concrete next step.
 If AFFORDABILITY FACTS are given, their "verdict" is decided by the app. Agree with it, never contradict it, and explain it using exactly those numbers. Having enough in the balance today does not mean it is safe: later bills matter.
+Support may be mentioned, but never say how much someone will get: only the official check can say.
 CONTEXT (the user's money right now, computed by the app's code):
 ${JSON.stringify(context)}`;
 }
@@ -40,8 +38,3 @@ export const RECEIPT_SYSTEM = `You read shop receipts. Return ONLY JSON, no othe
 export const RECEIPT_TEXT_SYSTEM = `This is text read from a shop receipt by OCR, so some characters may be wrong. Return ONLY JSON, no other text:
 {"merchant": string, "date": "YYYY-MM-DD", "items": [{"name": string, "qty": number, "price": number}], "total": number}
 "price" is the line total in GBP as a number, copied from the text. Never make up an item or a price. Leave out totals and payment lines from "items".`;
-
-export const SUBS_SYSTEM = `You find subscriptions and free trials in emails. Ignore one-off orders and deliveries.
-Return ONLY a JSON array, no other text:
-[{"service": string, "amount": number, "cycle": "monthly"|"yearly"|"weekly", "nextDate": "YYYY-MM-DD"|null, "status": "active"|"trial"|"price_rise", "note": string}]
-"note" is one short plain-English line, e.g. "Trial ends 12 Nov, then £4.99 a month".`;

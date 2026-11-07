@@ -1,10 +1,13 @@
 import type { Answers, Category, Txn } from '../types';
 import { addDays, weekday } from './dates';
 import { ESSENTIAL } from './categorise';
+import { dataWindow } from './prepare';
 
 export interface Summary {
   windowDays: number;
   monthlyIn: number;
+  /** Refunds and money from other people. Shown separately, because it isn't income. */
+  otherMoneyIn: number;
   monthlyOut: number;
   byCategory: { category: Category; monthly: number }[];
   essentialsMonthly: number;
@@ -18,15 +21,18 @@ export interface Summary {
 const WINDOW = 91;
 
 export function summarise(txns: Txn[], today: string, answers: Answers): Summary {
-  const from = addDays(today, -WINDOW);
-  const recent = txns.filter((t) => t.date >= from && t.date < today && t.source !== 'receipt');
-  const k = 30.4 / WINDOW;
+  const { from, to, days } = dataWindow(txns, today, WINDOW);
+  const recent = txns.filter((t) => t.date >= from && t.date < to && t.source !== 'receipt' && t.category !== 'internal');
+  const k = 30.4 / days;
   let inc = 0;
+  let other = 0;
   let out = 0;
   const cat = new Map<Category, number>();
   for (const t of recent) {
-    if (t.amount > 0) inc += t.amount;
-    else {
+    if (t.amount > 0) {
+      if (t.category === 'income') inc += t.amount;
+      else other += t.amount; // refunds, or money from people: not income
+    } else {
       out += -t.amount;
       cat.set(t.category, (cat.get(t.category) || 0) - t.amount);
     }
@@ -39,21 +45,23 @@ export function summarise(txns: Txn[], today: string, answers: Answers): Summary
   const monthlyIn = answers.incomeTypes.includes('student_loan') ? Math.max(answers.monthlyIncome, 1) : inc * k || answers.monthlyIncome;
 
   // weekly income volatility (coefficient of variation)
-  const weeks = new Array(13).fill(0);
+  const weekCount = Math.max(1, Math.ceil(days / 7));
+  const weeks = new Array(weekCount).fill(0);
   for (const t of recent) {
-    if (t.amount <= 0) continue;
+    if (t.amount <= 0 || t.category !== 'income') continue;
     const idx = Math.floor((new Date(t.date).getTime() - new Date(from).getTime()) / (7 * 86400000));
-    if (idx >= 0 && idx < 13) weeks[idx] += t.amount;
+    if (idx >= 0 && idx < weekCount) weeks[idx] += t.amount;
   }
   const mean = weeks.reduce((a, b) => a + b, 0) / weeks.length;
   const sd = Math.sqrt(weeks.reduce((a, b) => a + (b - mean) ** 2, 0) / weeks.length);
-  const last30from = addDays(today, -30);
+  const last30from = addDays(to, -30);
   const last30 = recent
     .filter((t) => t.date >= last30from)
     .reduce((a, t) => (t.amount > 0 ? { ...a, in: a.in + t.amount } : { ...a, out: a.out - t.amount }), { in: 0, out: 0 });
   return {
-    windowDays: WINDOW,
+    windowDays: days,
     monthlyIn,
+    otherMoneyIn: other * k,
     monthlyOut: out * k,
     byCategory,
     essentialsMonthly,
@@ -79,7 +87,7 @@ export function categoryTrends(txns: Txn[], today: string, top = 4, maxMonths = 
   const seen = new Set<string>();
   for (const t of txns) {
     const month = t.date.slice(0, 7);
-    if (t.source === 'receipt' || t.amount >= 0 || month >= thisMonth) continue;
+    if (t.source === 'receipt' || t.amount >= 0 || t.category === 'internal' || month >= thisMonth) continue;
     seen.add(month);
     const byMonth = totals.get(t.category) ?? new Map<string, number>();
     byMonth.set(month, (byMonth.get(month) || 0) - t.amount);
@@ -129,7 +137,7 @@ export function fingerprint(s: Summary, a: Answers, bufferDays: number, premiumA
     { id: 'room', label: 'Room left', score: clamp((1 - s.essentialsRatio) * 200), detail: `Essentials take ${Math.round(s.essentialsRatio * 100)}% of income` },
     { id: 'debt', label: 'Low debt', score: clamp(debt), detail: `Debt repayments £${Math.round(s.debtMonthly)}/month` },
     { id: 'buffer', label: 'Buffer', score: clamp((bufferDays / 60) * 100), detail: `${Math.round(bufferDays)} days of essentials covered` },
-    { id: 'fair', label: 'Fair prices', score: clamp(100 - premiumAnnual / 6), detail: `£${Math.round(premiumAnnual)}/year in extra costs` },
+    { id: 'fair', label: 'Low fees', score: clamp(100 - premiumAnnual / 6), detail: `£${Math.round(premiumAnnual)}/year in fees and charges` },
     { id: 'access', label: 'Easy access', score: clamp(100 - a.barriers.length * 25), detail: a.barriers.length ? `${a.barriers.length} barrier(s) noted` : 'No barriers noted' },
   ];
 }
@@ -146,11 +154,11 @@ export function groups(s: Summary, a: Answers, bufferDays: number): Group[] {
   if (s.essentialsRatio > 0.7)
     g.push({ id: 'stretched', label: 'Stretched', why: `Essentials take ${Math.round(s.essentialsRatio * 100)}% of your income`, adapts: 'We hunt for savings on essentials and support you may be missing' });
   if (a.barriers.includes('language') || a.barriers.includes('new_to_uk') || a.barriers.includes('no_bank_history'))
-    g.push({ id: 'newcomer', label: 'Newcomer', why: 'New to the UK systems or more comfortable in another language', adapts: 'Your language, plain words, and how UK bills and rights work' });
+    g.push({ id: 'newcomer', label: 'Newcomer', why: 'New to UK systems', adapts: 'Plain words, and how UK bills and rights work' });
   if (a.incomeTypes.includes('pension') || a.barriers.includes('low_digital') || a.barriers.includes('disability'))
     g.push({ id: 'fixed_cautious', label: 'Fixed & cautious', why: 'Fixed income or less confident online', adapts: 'Bigger text, fewer screens, and an optional trusted helper' });
   if (!g.length || (bufferDays >= 30 && s.essentialsRatio < 0.6 && !a.debts.includes('payday')))
-    g.push({ id: 'builder', label: 'Builder', why: 'You have some room to grow your safety net', adapts: 'Saving goals and, once ready, a first look at investing' });
+    g.push({ id: 'builder', label: 'Builder', why: 'You have some room to grow your safety net', adapts: 'Saving goals and, once ready, learning how investing works' });
   return g;
 }
 

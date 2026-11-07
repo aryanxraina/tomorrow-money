@@ -8,7 +8,7 @@ export interface Readiness {
 export function investReadiness(opts: { bufferDays: number; highCostDebt: boolean; essentialsRatio: number; riskNext90: number }): Readiness {
   const checks = [
     { label: 'Safety buffer of at least 30 days', ok: opts.bufferDays >= 30, detail: `You have about ${Math.round(opts.bufferDays)} days.` },
-    { label: 'No high-cost debt', ok: !opts.highCostDebt, detail: opts.highCostDebt ? 'Paying off a high-cost loan usually beats any investment return.' : 'None found.' },
+    { label: 'No high-cost debt', ok: !opts.highCostDebt, detail: opts.highCostDebt ? 'Paying off a high-cost loan comes first.' : 'None found.' },
     { label: 'Low risk of running out in the next 3 months', ok: opts.riskNext90 < 0.1, detail: `Highest risk: ${Math.round(opts.riskNext90 * 100)}%.` },
     { label: 'Some room after essentials', ok: opts.essentialsRatio < 0.8, detail: `Essentials take ${Math.round(opts.essentialsRatio * 100)}% of income.` },
   ];
@@ -25,7 +25,7 @@ export interface SimYear {
 }
 
 /**
- * Monthly investing simulator. ASSUMPTIONS (shown in the UI): a global shares fund returning
+ * Monthly investing simulator. ASSUMPTIONS (shown in the UI): a broad mix of shares returning
  * 5% a year after inflation on average with 15% yearly volatility, 0.3% yearly fees; cash at 1%.
  * Educational illustration only, not advice.
  */

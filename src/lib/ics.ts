@@ -41,8 +41,9 @@ export function billsToIcs(bills: { date: string; label: string; amount: number 
   return lines.map(fold).join('\r\n') + '\r\n';
 }
 
-export function downloadIcs(content: string, filename: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: 'text/calendar;charset=utf-8' }));
+/** Saves a file to the person's device. Nothing is sent anywhere. */
+export function downloadFile(filename: string, content: string, type: string) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;

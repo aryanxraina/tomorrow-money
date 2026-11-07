@@ -59,11 +59,19 @@ def days_between(a: str, b: str) -> int:
 # ---- Spending summary ----------------------------------------------------------------------------
 
 
+def data_window(p: dict, today: str, max_days: int) -> tuple[str, str, int]:
+    """The period to average over: up to max_days, but only as far as there is data, ending at the newest."""
+    dates = [t["date"] for t in p["txns"] if t["source"] != "receipt" and t["date"] < today]
+    to = (d(max(dates)) + timedelta(days=1)).isoformat()
+    days = max(7, min(max_days, days_between(to, min(dates))))
+    return (d(to) - timedelta(days=days)).isoformat(), to, days
+
+
 def audit_summary(p: dict, essential: set[str], today: str) -> None:
-    window_start = (d(today) - timedelta(days=91)).isoformat()
-    recent = [t for t in p["txns"] if window_start <= t["date"] < today and t["source"] != "receipt"]
-    k = 30.4 / 91
-    money_in = sum(t["amount"] for t in recent if t["amount"] > 0) * k
+    start, to, days = data_window(p, today, 91)
+    recent = [t for t in p["txns"] if start <= t["date"] < to and t["source"] != "receipt" and t["category"] != "internal"]
+    k = 30.4 / days
+    money_in = sum(t["amount"] for t in recent if t["amount"] > 0 and t["category"] == "income") * k  # refunds and friends are not income
     money_out = -sum(t["amount"] for t in recent if t["amount"] < 0) * k
     by_category: dict[str, float] = {}
     for t in recent:
@@ -88,36 +96,29 @@ def audit_summary(p: dict, essential: set[str], today: str) -> None:
 # ---- Fees and tax --------------------------------------------------------------------------------
 
 FEES = {
-    "fee-od": r"OVERDRAFT INTEREST",
-    "fee-unpaid": r"UNPAID ITEM|RETURNED",
-    "fee-late": r"LATE FEE",
-    "fee-atm": r"ATM FEE|WITHDRAWAL FEE",
-    "fee-cashout": r"INSTANT CASHOUT",
+    "fee-od": r"OVERDRAFT|ARRANGED OD|\bO/D\b",
+    "fee-unpaid": r"UNPAID ITEM|RETURNED (?:ITEM|PAYMENT|DD)",
+    "fee-late": r"LATE (?:PAYMENT )?FEE|LATE PAYMENT",
+    "fee-atm": r"ATM FEE|WITHDRAWAL FEE|CASH MACHINE FEE",
+    "fee-cashout": r"INSTANT CASHOUT|CASH ?OUT FEE",
     "fee-fx": r"QUICKSEND FEE|TRANSFER FEE",
 }
 
 
 def audit_premium(p: dict, today: str) -> None:
-    start = (d(today) - timedelta(days=182)).isoformat()
-    recent = [t for t in p["txns"] if start <= t["date"] < today and t["source"] != "receipt"]
+    start, to, days = data_window(p, today, 182)
+    recent = [t for t in p["txns"] if start <= t["date"] < to and t["source"] != "receipt"]
     problems = {x["id"]: x for x in p["engine"]["problems"]}
 
     for problem_id, pattern in FEES.items():
         charges = [t for t in recent if t["amount"] < 0 and re.search(pattern, t["description"], re.I)]
-        annual = -sum(t["amount"] for t in charges) * 365 / 182
+        annual = -sum(t["amount"] for t in charges) * 365 / days
         if charges or problem_id in problems:
             found = problems.get(problem_id, {}).get("annualCost") or 0
             check(close(annual, found), f"{problem_id} per year", f"£{annual:.2f} from {len(charges)} charges")
 
-    # An estimate: the share of shopping at small stores, at 18% above supermarket prices.
-    groceries = [t for t in recent if t["category"] == "groceries"]
-    small = [t for t in groceries if re.search(r"EXPRESS|LOCAL|CO-OP|COOP|CONVENIENCE", t["description"], re.I)]
-    grocery_spend, small_spend = -sum(t["amount"] for t in groceries), -sum(t["amount"] for t in small)
-    if grocery_spend > 0 and small_spend / grocery_spend > 0.2:
-        check(close(small_spend * 365 / 182 * 0.18, problems["convenience"]["annualCost"]), "convenience-store estimate", f"£{small_spend * 365 / 182 * 0.18:.2f}")
-
     total = sum(x["annualCost"] or 0 for x in problems.values() if x["premium"])
-    check(close(total, p["engine"]["premiumAnnual"]), "poverty premium adds up", f"£{total:.2f}")
+    check(close(total, p["engine"]["premiumAnnual"]), "fees and charges add up", f"£{total:.2f}")
 
 
 def audit_tax(p: dict, today: str) -> None:
@@ -125,21 +126,27 @@ def audit_tax(p: dict, today: str) -> None:
     if "gig" not in p["answers"]["incomeTypes"]:
         check(tax is None, "no tax estimate for non-gig income")
         return
-    earliest = min(t["date"] for t in p["txns"])
-    span = max(28, min(182, days_between(today, earliest)))
-    start = (d(today) - timedelta(days=span)).isoformat()
-    recent = [t for t in p["txns"] if start <= t["date"] < today]
-    yearly = 365 / span
-    income = sum(t["amount"] for t in recent if t["amount"] > 0 and re.search("PAYOUT", t["description"], re.I)) * yearly
+    start, to, days = data_window(p, today, 182)
+    recent = [t for t in p["txns"] if start <= t["date"] < to and t["source"] != "receipt"]
+    yearly = 365 / days
+    gig_pattern = "PAYOUT|DELIVEROO|UBER|JUST ?EAT|STUART|EVRI|BOLT|AMAZON FLEX|STRIPE|SUMUP|ZETTLE|PAYPAL"
+    money = [t for t in recent if t["amount"] > 0 and t["category"] == "income"]
+    income = sum(t["amount"] for t in money if re.search(gig_pattern, t["description"], re.I)) * yearly
+    other = sum(t["amount"] for t in money if not re.search(gig_pattern, t["description"], re.I)) * yearly
     expenses = 0.0
     for t in recent:
         if t["amount"] < 0 and (t["category"] == "transport" or re.search("MOBILE|PHONE", t["description"], re.I)):
             expenses += -t["amount"] if t["category"] == "transport" else -t["amount"] * 0.5
     expenses *= yearly
     profit = max(0, income - expenses)
-    taxable = max(0, profit - 12_570)
-    bill = round(taxable * 0.26 / 10) * 10  # 20% income tax + 6% Class 4 National Insurance
-    payment_on_account = round(bill / 2 / 10) * 10 if bill > 1000 else 0
+    top = other + profit
+    def band(lower: float, upper: float) -> float:
+        return max(0.0, min(top, upper) - max(other, lower))
+    income_tax = band(12_570, 50_270) * 0.20 + band(50_270, 125_140) * 0.40 + band(125_140, math.inf) * 0.45
+    national_insurance = max(0.0, min(profit, 50_270) - 12_570) * 0.06 + max(0.0, profit - 50_270) * 0.02
+    bill = round((income_tax + national_insurance) / 10) * 10
+    payment_on_account = round(bill / 2 / 10) * 10 if bill >= 1000 else 0
+    check(tax["due"] > today and tax["due"].endswith("-01-31"), "tax: due on the next 31 January", tax["due"])
     check(close(profit, tax["profit"]), "tax: profit", f"£{profit:.2f}")
     check(bill == tax["bill"] and payment_on_account == tax["paymentOnAccount"], "tax: bill and payment on account", f"£{bill} + £{payment_on_account}")
     check(bill + payment_on_account == tax["total"], "tax: total", f"£{bill + payment_on_account}")
@@ -172,13 +179,14 @@ def audit_schedule(p: dict) -> None:
 
 
 def build_pool(p: dict, today: str) -> list[list[dict]]:
-    start = d(today) - timedelta(days=91)
+    first, _to, days = data_window(p, today, 91)
+    start = d(first)
     recurring = {r["key"] for r in p["recurring"]}
-    by_date = {(start + timedelta(days=i)).isoformat(): {"other": 0.0, "energy": 0.0} for i in range(91)}
+    by_date = {(start + timedelta(days=i)).isoformat(): {"other": 0.0, "energy": 0.0} for i in range(days)}
     for t in p["txns"]:
         if t["amount"] >= 0 or t["date"] not in by_date or t["source"] == "receipt":
             continue
-        if t["key"] in recurring or t["category"] in ("transfers", "savings") or abs(t["amount"]) > 250:
+        if t["key"] in recurring or t["category"] in ("transfers", "savings", "internal") or abs(t["amount"]) > 250:
             continue
         by_date[t["date"]]["energy" if t["category"] == "energy" else "other"] += -t["amount"]
     pool: list[list[dict]] = [[] for _ in range(7)]
@@ -220,7 +228,7 @@ def simulate(p: dict, pool: list[list[dict]], today: str, adjust: dict | None, s
             continue
         fixed = None if r["variable"] else r["last"]
         if r["category"] == "council_tax":
-            fixed = r["last"] * ct_multiplier * (10 / 12 if spread else 1)
+            fixed = r["last"] * ct_multiplier * (10 / 12 if spread and not p["ctAlready12"] else 1)
             if fixed == 0:
                 continue
         scale = adjust.get("scale", {}).get(r["category"], 1) if r["direction"] == "out" else 1
@@ -329,37 +337,6 @@ def audit_forecast(p: dict, pool: list[list[dict]], today: str, seed: int) -> No
     print(f"  info risky days: shown {risky_days(e['forecast']['pBelow0'])} to {risky_days(e['plan']['pBelow0'])}; at {RUNS:,} runs {risky_days(base['pBelow0'])} to {risky_days(plan['pBelow0'])}")
 
 
-# ---- Figures quoted in the pitch -----------------------------------------------------------------
-
-# Keep in step with PITCH.md. A failure here means the engine moved and the pitch must be updated.
-PITCH = {
-    "amara": {"premium": 417, "support": 106, "oneoff": 150, "first": ("2026-12-06", 34), "max": ("2026-12-12", 100), "plan_max": 85, "risky": (25, 8), "car_risky": 35, "safe": (5, 0, 6), "afford": (52, 84)},
-    "jordan": {"tax": 1770, "first": ("2027-01-31", 100), "risky": (5, 0), "safe": (6, 0, 24)},
-    "kacper": {"premium": 164, "first": ("2026-12-03", 48), "plan_max": 42, "safe": (12, 24, 26)},
-    "priya": {"first": ("2027-01-01", 100), "risky": (18, 4), "safe": (24, 25, 44)},
-}
-
-
-def audit_pitch(p: dict) -> None:
-    claims = PITCH.get(p["id"], {})
-    e = p["engine"]
-    actual: dict = {
-        "premium": round(e["premiumAnnual"]),
-        "support": round(e["supportMonthly"]),
-        "oneoff": round(e["supportOneOff"]),
-        "tax": e["tax"]["total"] if e["tax"] else None,
-        "first": (e["forecast"]["firstRisk"]["date"], round(e["forecast"]["firstRisk"]["p"] * 100)) if e["forecast"]["firstRisk"] else None,
-        "max": (e["forecast"]["maxRisk"]["date"], round(e["forecast"]["maxRisk"]["p"] * 100)),
-        "plan_max": round(e["plan"]["maxRisk"]["p"] * 100),
-        "risky": (risky_days(e["forecast"]["pBelow0"]), risky_days(e["plan"]["pBelow0"])),
-        "car_risky": risky_days(e["carRepair"]["pBelow0"]),
-        "safe": (round(e["bufferDays"]), round(e["safeDaysBase"]), round(e["safeDaysPlan"])),
-        "afford": (round(e["afford60"]["riskBefore"] * 100), round(e["afford60"]["riskAfter"] * 100)),
-    }
-    wrong = {k: f"pitch {v}, engine {actual[k]}" for k, v in claims.items() if actual[k] != v}
-    check(not wrong, f"{len(claims)} pitch figures match the engine", str(wrong) if wrong else "")
-
-
 def main() -> int:
     if not DATA.exists():
         print(f"{DATA} not found. Run: npm run audit")
@@ -376,7 +353,6 @@ def main() -> int:
         pool = build_pool(p, today)
         audit_pool(p, pool)
         audit_forecast(p, pool, today, seed=1000 + index * 10)
-        audit_pitch(p)
     print(f"\n{'ALL AGREED' if not failures else f'{len(failures)} DISAGREEMENT(S): ' + '; '.join(failures)}")
     return 1 if failures else 0
 

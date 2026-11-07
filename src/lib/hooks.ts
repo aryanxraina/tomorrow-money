@@ -1,89 +1,77 @@
 'use client';
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { getPersona } from './data/personas';
-import { analyse, estimateFromAnswers } from './engine/analyse';
-import { TODAY } from './engine/dates';
-import { t } from './i18n';
+import { analyse, estimateFromAnswers, planForecast, type Analysis } from './engine/analyse';
+import { todayISO } from './engine/dates';
+import type { Forecast } from './engine/forecast';
+import { buildFacts, templates } from './narrative';
 import { useStore, type Mode } from './store';
-import type { Answers, BasketItem, Lang, Txn } from './types';
+import type { Answers, Category, ConfirmedSupport, Txn } from './types';
 
 export const APP_NAME = 'Tomorrow';
 
 export interface Profile {
-  id: string;
   name: string;
-  hero?: string;
-  tagline?: string;
   answers: Answers;
   txns: Txn[];
-  basket: BasketItem[];
-  demoLocation: { lat: number; lng: number; label: string };
-  isDemo: boolean;
+  /** True when the forecast is built from their answers because there's no bank data yet. */
+  estimated: boolean;
+  newestBankDate: string | null;
+  known: string[];
+  rules: Record<string, Category>;
+  confirmed: ConfirmedSupport[];
 }
 
-const DEFAULT_BASKET: BasketItem[] = [
-  { name: 'Milk 4 pints', qty: 1, basePrice: 1.55 },
-  { name: 'Bread', qty: 1, basePrice: 0.75 },
-  { name: 'Eggs x12', qty: 1, basePrice: 2.39 },
-  { name: 'Pasta 500g', qty: 2, basePrice: 0.75 },
-  { name: 'Rice 1kg', qty: 1, basePrice: 1.39 },
-  { name: 'Chicken 1kg', qty: 1, basePrice: 5.49 },
-  { name: 'Bananas', qty: 1, basePrice: 0.95 },
-];
+// Screens share one result, so moving between tabs doesn't re-run the forecast.
+let lastAnalysis: { inputs: unknown[]; profile: Profile; analysis: Analysis } | null = null;
 
-export function useProfile(): Profile | null {
-  const profileId = useStore((s) => s.profileId);
-  const myAnswers = useStore((s) => s.myAnswers);
-  const myTxns = useStore((s) => s.myTxns);
-  const added = useStore((s) => s.added);
-  const addedBills = useStore((s) => s.addedBills);
-  return useMemo(() => {
-    if (!profileId) return null;
-    const extraTxns = added[profileId] || [];
-    const extraBills = addedBills[profileId] || [];
-    if (profileId === 'me') {
-      if (!myAnswers) return null;
-      const base = myTxns.length ? myTxns : estimateFromAnswers(myAnswers, TODAY);
+function shared(inputs: unknown[], build: () => Profile) {
+  if (lastAnalysis && lastAnalysis.inputs.length === inputs.length && lastAnalysis.inputs.every((x, i) => x === inputs[i])) return lastAnalysis;
+  const profile = build();
+  const analysis = analyse(profile.answers, profile.txns, todayISO(), { rules: profile.rules, confirmed: profile.confirmed, known: profile.known });
+  lastAnalysis = { inputs, profile, analysis };
+  return lastAnalysis;
+}
+
+/** The person's data and everything worked out from it. Null until they've started. */
+export function useMoney() {
+  const answers = useStore((s) => s.answers);
+  const txns = useStore((s) => s.txns);
+  const bills = useStore((s) => s.bills);
+  const known = useStore((s) => s.known);
+  const rules = useStore((s) => s.rules);
+  const confirmed = useStore((s) => s.confirmed);
+  const selectedStore = useStore((s) => s.selected);
+
+  const result = useMemo(() => {
+    if (!answers) return null;
+    const today = todayISO();
+    return shared([answers, txns, bills, known, rules, confirmed, today], () => {
+      const bank = txns.filter((t) => t.source === 'bank');
+      const estimated = bank.length === 0;
       return {
-        id: 'me',
-        name: myAnswers.name || 'You',
-        answers: { ...myAnswers, yearlyBills: [...myAnswers.yearlyBills, ...extraBills] },
-        txns: [...base, ...extraTxns],
-        basket: DEFAULT_BASKET,
-        demoLocation: { lat: 53.4808, lng: -2.2426, label: 'Tesco Express (demo)' },
-        isDemo: false,
+        name: answers.name || 'there',
+        answers: { ...answers, yearlyBills: [...answers.yearlyBills, ...bills] },
+        txns: estimated ? [...estimateFromAnswers(answers, today), ...txns] : txns,
+        estimated,
+        newestBankDate: bank.reduce<string | null>((m, t) => (!m || t.date > m ? t.date : m), null),
+        known,
+        rules,
+        confirmed,
       };
-    }
-    const p = getPersona(profileId);
-    if (!p) return null;
-    return {
-      id: p.id,
-      name: p.name,
-      hero: p.hero,
-      tagline: p.tagline,
-      answers: { ...p.answers, yearlyBills: [...p.answers.yearlyBills, ...extraBills] },
-      txns: [...p.txns, ...extraTxns],
-      basket: p.basket,
-      demoLocation: p.demoLocation,
-      isDemo: true,
-    };
-  }, [profileId, myAnswers, myTxns, added, addedBills]);
-}
+    });
+  }, [answers, txns, bills, known, rules, confirmed]);
 
-export function useAnalysis(profile: Profile | null) {
-  return useMemo(() => (profile ? analyse(profile.answers, profile.txns, TODAY) : null), [profile]);
-}
-
-export function useLang(profile?: Profile | null): Lang {
-  const lang = useStore((s) => s.lang);
-  return lang ?? profile?.answers.language ?? 'en';
-}
-
-/** Translator for the current profile's language, for shared components. */
-export function useT() {
-  const lang = useLang(useProfile());
-  return (key: string) => t(lang, key);
+  return useMemo(() => {
+    if (!result) return null;
+    const { profile, analysis: an } = result;
+    // Claims don't change the forecast until confirmed, so only the other steps can be ticked.
+    const selectedIds = selectedStore ?? an.actions.filter((a) => a.kind !== 'claim').map((a) => a.id);
+    const selectedActions = an.actions.filter((a) => a.kind !== 'claim' && selectedIds.includes(a.id));
+    const plan: Forecast = planForecast(an, selectedActions);
+    const facts = buildFacts(profile, an, plan, selectedActions.map((a) => a.title));
+    return { profile, an, plan, selectedIds, selectedActions, facts, rulesText: templates(facts) };
+  }, [result, selectedStore]);
 }
 
 const subscribeOnline = (cb: () => void) => {
@@ -103,7 +91,7 @@ export function useOnline() {
   );
 }
 
-/** Auto mode falls back to the on-device model when there is no internet. */
+/** With no internet, everything behaves as it does in On-device mode. */
 export function useEffectiveMode(): Mode {
   const mode = useStore((s) => s.mode);
   const online = useOnline();
@@ -133,8 +121,6 @@ export interface AiStatus {
   localUrl: string;
   localModel: string;
   localUp: boolean;
-  google: boolean;
-  finnhub: boolean;
 }
 
 export function useAiStatus() {

@@ -1,6 +1,8 @@
 import type { Answers, Txn } from '../types';
-import { addDays } from './dates';
+import { addDays, shortDate } from './dates';
+import { dataWindow } from './prepare';
 import type { Recurring } from './recurring';
+import type { TaxEstimate } from './tax';
 import type { Summary } from './understand';
 
 export interface Problem {
@@ -15,47 +17,14 @@ export interface Problem {
   fix: string;
 }
 
-export interface TaxEstimate {
-  due: string;
-  bill: number;
-  paymentOnAccount: number;
-  total: number;
-  income: number;
-  expenses: number;
-  profit: number;
-}
-
-const PERSONAL_ALLOWANCE = 12570;
-const BASIC_RATE = 0.2;
-const CLASS4_NI = 0.06;
-
-/** Rough Self Assessment estimate for self-employed gig income. Not tax advice. */
-export function estimateSelfAssessment(txns: Txn[], today: string, a: Answers): TaxEstimate | null {
-  if (!a.incomeTypes.includes('gig')) return null;
-  if (txns.some((t) => t.category === 'tax')) return null; // already setting money aside
-  const earliest = txns.reduce((m, t) => (t.date < m ? t.date : m), today);
-  const span = Math.max(28, Math.min(182, Math.round((new Date(today).getTime() - new Date(earliest).getTime()) / 86400000)));
-  const from = addDays(today, -span);
-  const yearly = 365 / span;
-  const recent = txns.filter((t) => t.date >= from && t.date < today);
-  const income = recent.filter((t) => t.amount > 0 && /PAYOUT/i.test(t.description)).reduce((s, t) => s + t.amount, 0) * yearly;
-  const expenses =
-    recent
-      .filter((t) => t.amount < 0 && (t.category === 'transport' || /MOBILE|PHONE/i.test(t.description)))
-      .reduce((s, t) => s + (t.category === 'transport' ? -t.amount : -t.amount * 0.5), 0) * yearly;
-  const profit = Math.max(0, income - expenses);
-  const taxable = Math.max(0, profit - PERSONAL_ALLOWANCE);
-  const bill = Math.round((taxable * (BASIC_RATE + CLASS4_NI)) / 10) * 10;
-  const poa = bill > 1000 ? Math.round(bill / 2 / 10) * 10 : 0;
-  return { due: '2027-01-31', bill, paymentOnAccount: poa, total: bill + poa, income, expenses, profit };
-}
+export { estimateSelfAssessment, type TaxEstimate } from './tax';
 
 const FEE_TYPES: { re: RegExp; id: string; title: string; fix: string }[] = [
-  { re: /OVERDRAFT INTEREST/i, id: 'od', title: 'Overdraft interest', fix: 'A small buffer stops this. Your plan builds one.' },
-  { re: /UNPAID ITEM|RETURNED/i, id: 'unpaid', title: 'Unpaid payment fees', fix: 'Move bill dates to just after payday.' },
-  { re: /LATE FEE/i, id: 'late', title: 'Late payment fees', fix: 'Line up buy-now-pay-later dates with payday.' },
-  { re: /ATM FEE|WITHDRAWAL FEE/i, id: 'atm', title: 'Cash machine fees', fix: 'Use free cash machines. The Pay tab shows ones nearby.' },
-  { re: /INSTANT CASHOUT/i, id: 'cashout', title: 'Instant cash-out fees', fix: 'Wait for the free weekly payout when you can.' },
+  { re: /OVERDRAFT|ARRANGED OD|\bO\/D\b/i, id: 'od', title: 'Overdraft charges', fix: 'A small buffer stops this. Your plan builds one.' },
+  { re: /UNPAID ITEM|RETURNED (?:ITEM|PAYMENT|DD)/i, id: 'unpaid', title: 'Unpaid payment fees', fix: 'Move bill dates to just after payday.' },
+  { re: /LATE (?:PAYMENT )?FEE|LATE PAYMENT/i, id: 'late', title: 'Late payment fees', fix: 'Line up buy-now-pay-later dates with payday.' },
+  { re: /ATM FEE|WITHDRAWAL FEE|CASH MACHINE FEE/i, id: 'atm', title: 'Cash machine fees', fix: 'Use free cash machines. The Nearby tab links to a finder.' },
+  { re: /INSTANT CASHOUT|CASH ?OUT FEE/i, id: 'cashout', title: 'Instant cash-out fees', fix: 'Wait for the free weekly payout when you can.' },
   { re: /QUICKSEND FEE|TRANSFER FEE/i, id: 'fx', title: 'Money transfer fees', fix: 'Compare providers on fee plus exchange rate.' },
 ];
 
@@ -69,8 +38,9 @@ export function detectProblems(
   tax: TaxEstimate | null,
 ): Problem[] {
   const p: Problem[] = [];
-  const from182 = addDays(today, -182);
-  const recent = txns.filter((t) => t.date >= from182 && t.date < today && t.source !== 'receipt');
+  const window = dataWindow(txns, today, 182);
+  const recent = txns.filter((t) => t.date >= window.from && t.date < window.to && t.source !== 'receipt');
+  const months = Math.max(1, Math.round(window.days / 30.4));
 
   if (s.essentialsRatio > 0.7) {
     p.push({
@@ -86,11 +56,11 @@ export function detectProblems(
   for (const f of FEE_TYPES) {
     const ev = recent.filter((t) => t.amount < 0 && f.re.test(t.description));
     if (!ev.length) continue;
-    const annual = (ev.reduce((x, t) => x - t.amount, 0) * 365) / 182;
+    const annual = (ev.reduce((x, t) => x - t.amount, 0) * 365) / window.days;
     p.push({
       id: `fee-${f.id}`,
       title: f.title,
-      detail: `${ev.length} charges in the last 6 months.`,
+      detail: `${ev.length} ${ev.length === 1 ? 'charge' : 'charges'} in the last ${months} ${months === 1 ? 'month' : 'months'}.`,
       severity: annual > 60 ? 'medium' : 'low',
       annualCost: annual,
       premium: true,
@@ -104,9 +74,8 @@ export function detectProblems(
     p.push({
       id: 'ppm',
       title: 'Prepayment meter',
-      detail: `${ppm.length} top-ups in 6 months. Winter top-ups are predicted to be about 30% higher, with no way to spread the cost.`,
+      detail: `${ppm.length ? `${ppm.length} top-ups in the last ${months} ${months === 1 ? 'month' : 'months'}. ` : ''}Winter top-ups are usually higher, with no way to spread the cost. The forecast allows for this.`,
       severity: 'medium',
-      premium: true,
       evidence: ppm.slice(-6),
       fix: 'Check the Warm Home Discount and ask your supplier about cheaper ways to pay.',
     });
@@ -114,21 +83,17 @@ export function detectProblems(
 
   const insMonthly = recurring.filter((r) => r.category === 'insurance' && r.direction === 'out' && r.cadence === 'monthly');
   for (const r of insMonthly) {
-    const est = r.last * 12 * 0.1;
     p.push({
       id: `ins-${r.key}`,
-      title: `${r.label}: paying monthly costs extra`,
-      detail: `Spreading an insurance premium monthly usually adds interest. Estimate: about £${Math.round(est)} a year.`,
+      title: `${r.label}: paying monthly can cost extra`,
+      detail: 'Spreading an insurance premium monthly often adds interest. Your insurer can tell you exactly how much.',
       severity: 'low',
-      annualCost: est,
-      premium: true,
-      estimate: true,
       evidence: recent.filter((t) => t.description.toUpperCase().includes(r.label.toUpperCase().split(' ')[0])).slice(-3),
       fix: 'At renewal, compare the pay-annually price. Your buffer can make that possible.',
     });
   }
 
-  const hcc = recent.filter((t) => /CASHNOW|PAYDAY|QUICKQUID/i.test(t.description));
+  const hcc = recent.filter((t) => t.amount < 0 && /CASHNOW|PAYDAY|LENDING STREAM|DRAFTY|MONEYBOAT|PROVIDENT|AMIGO/i.test(t.description));
   if (hcc.length) {
     p.push({
       id: 'hcc',
@@ -171,30 +136,25 @@ export function detectProblems(
     p.push({
       id: 'ct-student',
       title: 'You may be paying council tax you do not owe',
-      detail: `Homes where everyone is a full-time student are usually exempt. You've paid £${Math.round(ctPaid.reduce((x, t) => x - t.amount, 0))} so far.`,
+      detail: `Homes where everyone is a full-time student are usually exempt. Your statements show £${Math.round(ctPaid.reduce((x, t) => x - t.amount, 0))} paid, and your current payment is £${Math.round(monthly)}.`,
       severity: 'high',
-      annualCost: monthly * 10,
       evidence: ctPaid,
       fix: 'Send your council a student certificate for everyone in the house and ask for a refund.',
     });
   }
 
-  const conv = recent.filter((t) => t.category === 'groceries' && /EXPRESS|LOCAL|CO-OP|COOP|CONVENIENCE/i.test(t.description));
+  const conv = recent.filter((t) => t.category === 'groceries' && /EXPRESS|LOCAL|CO-OP|COOP|CONVENIENCE|LONDIS|NISA|SPAR|COSTCUTTER/i.test(t.description));
   const groc = recent.filter((t) => t.category === 'groceries');
   const convSpend = conv.reduce((x, t) => x - t.amount, 0);
   const grocSpend = groc.reduce((x, t) => x - t.amount, 0);
   if (grocSpend > 0 && convSpend / grocSpend > 0.2) {
-    const annual = ((convSpend * 365) / 182) * 0.18;
     p.push({
       id: 'convenience',
-      title: 'Convenience-store prices',
-      detail: `${Math.round((convSpend / grocSpend) * 100)}% of your food shopping is at small "express" stores, which usually charge more for the same items.`,
+      title: 'A lot of shopping at small stores',
+      detail: `${Math.round((convSpend / grocSpend) * 100)}% of your food shopping is at small convenience stores, which often charge more for the same items.`,
       severity: 'low',
-      annualCost: annual,
-      premium: true,
-      estimate: true,
       evidence: conv.slice(-5),
-      fix: 'Use the Pay tab at checkout: it shows a cheaper shop nearby when the trip is worth it.',
+      fix: 'Snap a few receipts: the price tracker shows what you paid where, so you can compare from your own shopping.',
     });
   }
 
@@ -210,9 +170,10 @@ export function detectProblems(
   }
 
   // spending trend vs your own past (never vs other people)
-  const from30 = addDays(today, -30);
-  const from91 = addDays(today, -91);
+  const from30 = addDays(window.to, -30);
+  const from91 = addDays(window.to, -91);
   for (const cat of ['eating_out', 'shopping'] as const) {
+    if (window.days < 61) break; // too little history to know what's usual
     const last30 = recent.filter((t) => t.category === cat && t.date >= from30 && t.amount < 0).reduce((x, t) => x - t.amount, 0);
     const prev = recent.filter((t) => t.category === cat && t.date >= from91 && t.date < from30 && t.amount < 0).reduce((x, t) => x - t.amount, 0) / (61 / 30.4);
     if (prev > 0 && last30 > prev * 1.3 && last30 - prev > 20) {
@@ -230,7 +191,7 @@ export function detectProblems(
   if (tax) {
     p.push({
       id: 'tax',
-      title: `Tax bill coming: about £${tax.total.toLocaleString('en-GB')} by 31 Jan`,
+      title: `Tax bill coming: about £${tax.total.toLocaleString('en-GB')} by ${shortDate(tax.due)}`,
       detail: `Self Assessment estimate on about £${Math.round(tax.profit).toLocaleString('en-GB')} profit${tax.paymentOnAccount ? `, including a first payment on account of £${tax.paymentOnAccount}` : ''}. Nothing has been set aside yet.`,
       severity: 'high',
       estimate: true,

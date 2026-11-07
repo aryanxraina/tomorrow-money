@@ -1,328 +1,232 @@
 'use client';
 
+import { ChevronLeft, ChevronRight, FileSpreadsheet, MessageCircleQuestion } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
-import { Button, Card, Field, inputCls, Muted } from '@/components/ui';
-import { getPersonas } from '@/lib/data/personas';
-import { categorise } from '@/lib/engine/categorise';
+import { useState } from 'react';
+import { StatementImport } from '@/components/StatementImport';
+import { Button, Card, Chip, Chips, Field, inputCls, Muted, PoundInput } from '@/components/ui';
+import { todayISO } from '@/lib/engine/dates';
 import { useStore } from '@/lib/store';
-import type { Answers, Barrier, DebtType, IncomeType, Lang, Txn } from '@/lib/types';
-import { LANGS } from '@/lib/i18n';
+import type { Answers, IncomeType, Nation } from '@/lib/types';
 
-const EMPTY: Answers = {
-  name: '',
-  adults: 1,
-  children: 0,
-  childUnder4: false,
-  incomeTypes: [],
-  monthlyIncome: 1200,
-  housing: 'rent_private',
-  housingCost: 600,
-  energyPayment: 'direct_debit',
-  foodWeekly: 60,
-  debts: [],
-  debtRepayMonthly: 0,
-  savings: 0,
-  balance: 200,
-  postcode: '',
-  councilTaxMonthly: 110,
-  ctSingleDiscount: false,
-  ctReduction: false,
-  allStudents: false,
-  onBenefits: false,
-  barriers: [],
-  language: 'en',
-  worry: '',
-  yearlyBills: [],
-  futureIncome: [],
-};
+const NATIONS: { id: Nation; label: string }[] = [
+  { id: 'england', label: 'England' },
+  { id: 'wales', label: 'Wales' },
+  { id: 'scotland', label: 'Scotland' },
+  { id: 'ni', label: 'Northern Ireland' },
+];
 
 const INCOME: { id: IncomeType; label: string }[] = [
   { id: 'salary', label: 'Monthly salary' },
   { id: 'four_weekly', label: 'Paid every 4 weeks' },
-  { id: 'gig', label: 'Gig / self-employed' },
-  { id: 'zero_hours', label: 'Zero-hours / agency' },
-  { id: 'benefits', label: 'Benefits (e.g. Universal Credit)' },
+  { id: 'zero_hours', label: 'Zero-hours or agency' },
+  { id: 'gig', label: 'Self-employed or gig work' },
+  { id: 'benefits', label: 'Benefits' },
   { id: 'student_loan', label: 'Student loan' },
   { id: 'pension', label: 'Pension' },
 ];
-const DEBTS: { id: DebtType; label: string }[] = [
-  { id: 'overdraft', label: 'Overdraft' },
-  { id: 'bnpl', label: 'Buy now, pay later' },
-  { id: 'credit_card', label: 'Credit card' },
-  { id: 'payday', label: 'Payday / short-term loan' },
-  { id: 'arrears', label: 'Behind on bills' },
-];
-const BARRIERS: { id: Barrier; label: string }[] = [
-  { id: 'language', label: 'Prefer another language' },
-  { id: 'new_to_uk', label: 'New to the UK' },
-  { id: 'no_bank_history', label: 'Little or no credit history' },
-  { id: 'low_digital', label: 'Not confident online' },
-  { id: 'disability', label: 'Disability or long-term illness' },
-];
 
-function Chips<T extends string>({ options, value, onChange }: { options: { id: T; label: string }[]; value: T[]; onChange: (v: T[]) => void }) {
+type Step = 'about' | 'start' | 'statement' | 'income' | 'balance' | 'costs';
+const QUESTION_STEPS: Step[] = ['about', 'start', 'income', 'balance', 'costs'];
+
+const amount = (s: string) => (s.trim() === '' ? null : Number(s));
+
+export default function Onboarding() {
+  const router = useRouter();
+  const saveAnswers = useStore((s) => s.saveAnswers);
+  const [step, setStep] = useState<Step>('about');
+  const [name, setName] = useState('');
+  const [nation, setNation] = useState<Nation | null>(null);
+  const [incomeTypes, setIncomeTypes] = useState<IncomeType[]>([]);
+  const [income, setIncome] = useState('');
+  const [balance, setBalance] = useState('');
+  const [overdrawn, setOverdrawn] = useState(false);
+  const [rent, setRent] = useState('');
+  const [councilTax, setCouncilTax] = useState('');
+  const [food, setFood] = useState('');
+
+  const saveAbout = () => saveAnswers({ name: name.trim(), nation }, ['name', nation ? 'nation' : ''].filter(Boolean));
+
+  const finish = () => {
+    const changes: Partial<Answers> = { name: name.trim(), nation, incomeTypes, onBenefits: incomeTypes.includes('benefits') };
+    const known = ['name', 'incomeTypes'];
+    if (nation) known.push('nation');
+    const add = (field: keyof Answers, value: number | null) => {
+      if (value === null || Number.isNaN(value)) return;
+      (changes as Record<string, unknown>)[field] = value;
+      known.push(field);
+    };
+    add('monthlyIncome', amount(income));
+    add('housingCost', amount(rent));
+    add('councilTaxMonthly', amount(councilTax));
+    add('foodWeekly', amount(food));
+    const b = amount(balance);
+    if (b !== null && !Number.isNaN(b)) {
+      changes.balance = overdrawn ? -Math.abs(b) : b;
+      changes.balanceDate = todayISO();
+      known.push('balance');
+    }
+    saveAnswers(changes, known);
+    router.push('/home');
+  };
+
+  const position = QUESTION_STEPS.indexOf(step === 'statement' ? 'start' : step);
+  const back = () => setStep(step === 'statement' || step === 'income' ? 'start' : step === 'start' ? 'about' : step === 'balance' ? 'income' : 'balance');
+
   return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((o) => {
-        const on = value.includes(o.id);
-        return (
-          <button
-            type="button"
-            key={o.id}
-            onClick={() => onChange(on ? value.filter((x) => x !== o.id) : [...value, o.id])}
-            className={`rounded-full px-3 py-1.5 text-sm ${on ? 'bg-violet-700 text-white' : 'bg-slate-100 text-slate-700'}`}
-          >
-            {o.label}
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 px-1 pt-1">
+        {step !== 'about' && (
+          <button type="button" aria-label="Back" onClick={back} className="-ml-2 grid h-9 w-9 place-items-center rounded-full">
+            <ChevronLeft size={24} aria-hidden />
           </button>
-        );
-      })}
+        )}
+        <div className="h-1.5 flex-1 rounded-full bg-card" role="progressbar" aria-label="Check-in progress" aria-valuemin={1} aria-valuemax={QUESTION_STEPS.length} aria-valuenow={position + 1}>
+          <div className="h-1.5 rounded-full transition-all" style={{ width: `${((position + 1) / QUESTION_STEPS.length) * 100}%`, background: 'var(--chart-line)' }} />
+        </div>
+      </div>
+
+      {step === 'about' && (
+        <>
+          <Heading title="Let’s get to know your money" sub="It takes about 2 minutes. Skip anything you’re not sure about." />
+          <Card className="space-y-4">
+            <Field label="What should we call you?" hint="Optional">
+              <input className={inputCls} value={name} autoComplete="given-name" onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <div>
+              <span className="mb-1.5 block text-sm font-medium">Where do you live?</span>
+              <div className="grid grid-cols-2 gap-2">
+                {NATIONS.map((n) => (
+                  <button
+                    key={n.id}
+                    type="button"
+                    aria-pressed={nation === n.id}
+                    onClick={() => setNation(n.id)}
+                    className={`rounded-2xl px-4 py-3 text-left text-[15px] font-medium transition ${nation === n.id ? 'bg-hero text-hero-ink' : 'bg-card-2 text-ink'}`}
+                  >
+                    {n.label}
+                  </button>
+                ))}
+              </div>
+              {(nation === 'scotland' || nation === 'ni') && <p className="mt-2 text-[13.5px] text-mut">Your forecast and plan will work fully. Our benefit checks only cover England and Wales so far, so we’ll point you to the right official service instead.</p>}
+            </div>
+          </Card>
+          <Button
+            className="w-full"
+            onClick={() => {
+              saveAbout();
+              setStep('start');
+            }}
+          >
+            Continue
+          </Button>
+        </>
+      )}
+
+      {step === 'start' && (
+        <>
+          <Heading title="How would you like to start?" sub="You can always add the other later." />
+          <button type="button" onClick={() => setStep('statement')} className="block w-full text-left">
+            <Card className="flex items-center gap-3">
+              <span className="grid h-11 w-11 flex-none place-items-center rounded-2xl bg-lime text-lime-ink">
+                <FileSpreadsheet size={22} aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2 font-semibold">
+                  Add a bank statement <Chip tone="good">Most accurate</Chip>
+                </span>
+                <span className="mt-0.5 block text-sm text-mut">A CSV file from your bank. It’s read on this device and isn’t uploaded.</span>
+              </span>
+              <ChevronRight size={20} className="flex-none text-mut" aria-hidden />
+            </Card>
+          </button>
+          <button type="button" onClick={() => setStep('income')} className="block w-full text-left">
+            <Card className="flex items-center gap-3">
+              <span className="grid h-11 w-11 flex-none place-items-center rounded-2xl bg-card-2 text-ink">
+                <MessageCircleQuestion size={22} aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold">Answer a few questions</span>
+                <span className="mt-0.5 block text-sm text-mut">Rough numbers are fine. We’ll make an estimate from them.</span>
+              </span>
+              <ChevronRight size={20} className="flex-none text-mut" aria-hidden />
+            </Card>
+          </button>
+        </>
+      )}
+
+      {step === 'statement' && (
+        <>
+          <Heading title="Add a bank statement" sub="Start with your main account. Three months or more gives the best forecast." />
+          <StatementImport showTitle={false} onImported={() => router.push('/home')} />
+        </>
+      )}
+
+      {step === 'income' && (
+        <>
+          <Heading title="Money coming in" sub="After tax, and roughly is fine." />
+          <Card className="space-y-4">
+            <div>
+              <span className="mb-1.5 block text-sm font-medium">How are you paid?</span>
+              <Chips options={INCOME} value={incomeTypes} onChange={setIncomeTypes} />
+            </div>
+            <Field label="Usual income a month">
+              <PoundInput value={income} onChange={setIncome} />
+            </Field>
+          </Card>
+          <Button className="w-full" onClick={() => setStep('balance')}>
+            Continue
+          </Button>
+        </>
+      )}
+
+      {step === 'balance' && (
+        <>
+          <Heading title="What’s in your main account today?" sub="Your forecast starts from this number." />
+          <Card className="space-y-3">
+            <Field label="Balance today">
+              <PoundInput value={balance} onChange={setBalance} />
+            </Field>
+            <label className="flex items-center gap-2.5 text-sm">
+              <input type="checkbox" className="h-5 w-5 accent-[var(--hero)]" checked={overdrawn} onChange={(e) => setOverdrawn(e.target.checked)} />
+              My account is overdrawn
+            </label>
+          </Card>
+          <Button className="w-full" onClick={() => setStep('costs')}>
+            Continue
+          </Button>
+        </>
+      )}
+
+      {step === 'costs' && (
+        <>
+          <Heading title="Your regular costs" sub="Leave anything blank if you’re not sure. We’ll ask again later if it matters." />
+          <Card className="space-y-4">
+            <Field label="Rent or mortgage a month">
+              <PoundInput value={rent} onChange={setRent} />
+            </Field>
+            <Field label="Council tax a month" hint="Put 0 if it’s included in your rent">
+              <PoundInput value={councilTax} onChange={setCouncilTax} />
+            </Field>
+            <Field label="Food shopping a week">
+              <PoundInput value={food} onChange={setFood} />
+            </Field>
+          </Card>
+          <Button className="w-full" onClick={finish}>
+            See my next 90 days
+          </Button>
+          <Muted className="px-1 text-center">Your answers stay on this device.</Muted>
+        </>
+      )}
     </div>
   );
 }
 
-function Section({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+function Heading({ title, sub }: { title: string; sub: string }) {
   return (
-    <Card className="space-y-4">
-      <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-full bg-violet-100 text-sm font-bold text-violet-800">{n}</span>
-        <h2 className="text-lg font-semibold">{title}</h2>
-      </div>
-      {children}
-    </Card>
-  );
-}
-
-function parseCsv(text: string): { txns: Txn[]; balance?: number } {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return { txns: [] };
-  const split = (l: string) => l.match(/("([^"]|"")*"|[^,]*)(,|$)/g)!.map((c) => c.replace(/,$/, '').replace(/^"|"$/g, '').replace(/""/g, '"').trim());
-  const head = split(lines[0]).map((h) => h.toLowerCase());
-  const di = head.findIndex((h) => h.includes('date'));
-  const ki = head.findIndex((h) => /desc|narrative|details|name|merchant/.test(h));
-  const ai = head.findIndex((h) => h === 'amount' || h.includes('amount') || h.includes('value'));
-  const bi = head.findIndex((h) => h.includes('balance'));
-  const txns: Txn[] = [];
-  let balance: number | undefined;
-  lines.slice(1).forEach((l, i) => {
-    const c = split(l);
-    const raw = c[di] || '';
-    const m = raw.match(/(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/);
-    const date = m ? `${m[3].length === 2 ? '20' + m[3] : m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : raw.slice(0, 10);
-    const amount = Number((c[ai] || '').replace(/[£,]/g, ''));
-    if (!date || Number.isNaN(amount)) return;
-    const description = (c[ki] || 'Transaction').toUpperCase();
-    txns.push({ id: `csv-${i}`, date, description, amount, category: categorise(description, amount), source: 'bank' });
-    if (bi >= 0 && c[bi]) balance = Number(c[bi].replace(/[£,]/g, ''));
-  });
-  txns.sort((a, b) => (a.date < b.date ? -1 : 1));
-  return { txns, balance };
-}
-
-export default function Onboarding() {
-  const router = useRouter();
-  const setMyProfile = useStore((s) => s.setMyProfile);
-  const [a, setA] = useState<Answers>(EMPTY);
-  const [csv, setCsv] = useState<{ txns: Txn[]; name: string } | null>(null);
-  const set = <K extends keyof Answers>(k: K, v: Answers[K]) => setA((x) => ({ ...x, [k]: v }));
-  const num = (k: keyof Answers) => (e: React.ChangeEvent<HTMLInputElement>) => set(k, Number(e.target.value) as never);
-
-  const prefill = (id: string) => {
-    const p = getPersonas().find((x) => x.id === id);
-    if (p) setA({ ...p.answers });
-  };
-
-  const submit = () => {
-    const answers = { ...a, name: a.name || 'You', onBenefits: a.onBenefits || a.incomeTypes.includes('benefits') };
-    setMyProfile(answers, csv?.txns || []);
-    router.push('/dashboard');
-  };
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">Your 2-minute check-in</h1>
-        <Muted>Every question is optional. We use your answers to predict the next 90 days before any bank data is connected.</Muted>
-      </div>
-      <Card className="flex flex-wrap items-center gap-2 bg-violet-50 ring-violet-100">
-        <span className="text-sm text-violet-900">Demo shortcut: fill in as</span>
-        {getPersonas().map((p) => (
-          <Button key={p.id} variant="soft" onClick={() => prefill(p.id)} className="!px-3 !py-1.5">
-            {p.name}
-          </Button>
-        ))}
-      </Card>
-
-      <Section n={1} title="About you">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="First name">
-            <input className={inputCls} value={a.name} onChange={(e) => set('name', e.target.value)} />
-          </Field>
-          <Field label="Language">
-            <select className={inputCls} value={a.language} onChange={(e) => set('language', e.target.value as Lang)}>
-              {LANGS.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Adults at home (including you)">
-            <input type="number" min={1} className={inputCls} value={a.adults} onChange={num('adults')} />
-          </Field>
-          <Field label="Children">
-            <input type="number" min={0} className={inputCls} value={a.children} onChange={num('children')} />
-          </Field>
-          <Field label="Postcode area" hint="Just the first part, e.g. LS9. Used for your council and nearby shops.">
-            <input className={inputCls} value={a.postcode} onChange={(e) => set('postcode', e.target.value.toUpperCase())} />
-          </Field>
-          <label className="flex items-center gap-2 self-end pb-2 text-sm">
-            <input type="checkbox" checked={a.childUnder4} onChange={(e) => set('childUnder4', e.target.checked)} /> A child under 4, or pregnant
-          </label>
-        </div>
-        <Field label="Anything that makes money stuff harder?">
-          <Chips options={BARRIERS} value={a.barriers} onChange={(v) => set('barriers', v)} />
-        </Field>
-      </Section>
-
-      <Section n={2} title="Money coming in">
-        <Field label="How are you paid? (pick all)">
-          <Chips options={INCOME} value={a.incomeTypes} onChange={(v) => set('incomeTypes', v)} />
-        </Field>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Usual income a month (£)">
-            <input type="number" className={inputCls} value={a.monthlyIncome} onChange={num('monthlyIncome')} />
-          </Field>
-          <Field label="In your account now (£)">
-            <input type="number" className={inputCls} value={a.balance} onChange={num('balance')} />
-          </Field>
-          <Field label="Savings (£)">
-            <input type="number" className={inputCls} value={a.savings} onChange={num('savings')} />
-          </Field>
-        </div>
-        {a.incomeTypes.includes('student_loan') && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Next loan payment date">
-              <input
-                type="date"
-                className={inputCls}
-                value={a.futureIncome[0]?.date || ''}
-                onChange={(e) => set('futureIncome', [{ label: 'Student loan', date: e.target.value, amount: a.futureIncome[0]?.amount || 1500 }])}
-              />
-            </Field>
-            <Field label="Amount (£)">
-              <input
-                type="number"
-                className={inputCls}
-                value={a.futureIncome[0]?.amount || ''}
-                onChange={(e) => set('futureIncome', [{ label: 'Student loan', date: a.futureIncome[0]?.date || '', amount: Number(e.target.value) }])}
-              />
-            </Field>
-          </div>
-        )}
-      </Section>
-
-      <Section n={3} title="Money going out">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Where you live">
-            <select className={inputCls} value={a.housing} onChange={(e) => set('housing', e.target.value as Answers['housing'])}>
-              <option value="rent_private">Renting (private)</option>
-              <option value="rent_social">Renting (council / housing association)</option>
-              <option value="room">Renting a room</option>
-              <option value="student_house">Student house</option>
-              <option value="mortgage">Mortgage</option>
-              <option value="family">With family</option>
-            </select>
-          </Field>
-          <Field label="Rent or mortgage a month (£)">
-            <input type="number" className={inputCls} value={a.housingCost} onChange={num('housingCost')} />
-          </Field>
-          <Field label="Council tax a month (£)" hint="0 if it is included in your rent">
-            <input type="number" className={inputCls} value={a.councilTaxMonthly} onChange={num('councilTaxMonthly')} />
-          </Field>
-          <Field label="Food shopping a week (£)">
-            <input type="number" className={inputCls} value={a.foodWeekly} onChange={num('foodWeekly')} />
-          </Field>
-          <Field label="How you pay for energy">
-            <select className={inputCls} value={a.energyPayment} onChange={(e) => set('energyPayment', e.target.value as Answers['energyPayment'])}>
-              <option value="direct_debit">Direct Debit</option>
-              <option value="prepayment">Prepayment meter / top-ups</option>
-              <option value="included">Included in rent</option>
-            </select>
-          </Field>
-          <Field label="Debt repayments a month (£)">
-            <input type="number" className={inputCls} value={a.debtRepayMonthly} onChange={num('debtRepayMonthly')} />
-          </Field>
-        </div>
-        <div className="flex flex-wrap gap-4 text-sm">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={a.onBenefits} onChange={(e) => set('onBenefits', e.target.checked)} /> I get benefits
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={a.allStudents} onChange={(e) => set('allStudents', e.target.checked)} /> Everyone at home is a full-time student
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={a.ctReduction} onChange={(e) => set('ctReduction', e.target.checked)} /> I already get Council Tax Reduction
-          </label>
-          {a.adults === 1 && (
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={a.ctSingleDiscount} onChange={(e) => set('ctSingleDiscount', e.target.checked)} /> I get the 25% single person discount
-            </label>
-          )}
-        </div>
-        <Field label="Any of these?">
-          <Chips options={DEBTS} value={a.debts} onChange={(v) => set('debts', v)} />
-        </Field>
-      </Section>
-
-      <Section n={4} title="Coming up, and what worries you">
-        <Field label="A big bill coming in the next 3 months?" hint="e.g. MOT, insurance renewal, Christmas">
-          <div className="grid grid-cols-3 gap-2">
-            <input
-              placeholder="What"
-              className={inputCls}
-              value={a.yearlyBills[0]?.label || ''}
-              onChange={(e) => set('yearlyBills', [{ label: e.target.value, date: a.yearlyBills[0]?.date || '', amount: a.yearlyBills[0]?.amount || 0 }])}
-            />
-            <input
-              type="date"
-              className={inputCls}
-              value={a.yearlyBills[0]?.date || ''}
-              onChange={(e) => set('yearlyBills', [{ label: a.yearlyBills[0]?.label || 'Bill', date: e.target.value, amount: a.yearlyBills[0]?.amount || 0 }])}
-            />
-            <input
-              type="number"
-              placeholder="£"
-              className={inputCls}
-              value={a.yearlyBills[0]?.amount || ''}
-              onChange={(e) => set('yearlyBills', [{ label: a.yearlyBills[0]?.label || 'Bill', date: a.yearlyBills[0]?.date || '', amount: Number(e.target.value) }])}
-            />
-          </div>
-        </Field>
-        <Field label="In your own words: what worries you most about money?" hint="The AI reads this to make your plan personal. Any language is fine.">
-          <textarea className={`${inputCls} min-h-20`} value={a.worry} onChange={(e) => set('worry', e.target.value)} />
-        </Field>
-        <Field label="Optional: upload a bank statement (CSV)" hint="Most UK banks let you export one. It stays in your browser. In a real launch this would connect through Open Banking.">
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              if (!f) return;
-              const parsed = parseCsv(await f.text());
-              setCsv({ txns: parsed.txns, name: f.name });
-              if (parsed.balance !== undefined) set('balance', parsed.balance);
-            }}
-          />
-          {csv && <span className="mt-1 block text-sm text-emerald-700">Read {csv.txns.length} transactions from {csv.name}</span>}
-        </Field>
-      </Section>
-
-      <div className="flex gap-3">
-        <Button onClick={submit} className="flex-1">
-          See my money tomorrow
-        </Button>
-      </div>
+    <div className="px-1">
+      <h1 className="text-balance font-display text-[28px] font-semibold leading-tight tracking-tight">{title}</h1>
+      <Muted className="mt-1">{sub}</Muted>
     </div>
   );
 }

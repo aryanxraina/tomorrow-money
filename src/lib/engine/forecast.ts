@@ -1,5 +1,6 @@
 import type { Category, Txn } from '../types';
 import { addDays, diffDays, month, weekday } from './dates';
+import { dataWindow } from './prepare';
 import { nextDates, type Recurring } from './recurring';
 import { rng } from './rng';
 
@@ -38,6 +39,8 @@ export interface ForecastInput {
   poolScaleByCategory?: Record<string, number>;
   known: KnownItem[];
   adjust?: Adjust;
+  /** The person already pays council tax over 12 months, so there's no gap in February and March. */
+  ctAlready12?: boolean;
 }
 
 export interface ForecastEvent {
@@ -68,13 +71,13 @@ export interface Forecast {
 export function buildDayPool(txns: Txn[], today: string, recurringKeys: Set<string>, keyOf: (t: Txn) => string): DayPool {
   const pool: DayPool = [[], [], [], [], [], [], []];
   const byDate = new Map<string, DaySample>();
-  const from = addDays(today, -91);
-  for (let d = from; d < today; d = addDays(d, 1)) byDate.set(d, { other: 0, energy: 0 });
+  const { from, to } = dataWindow(txns, today, 91);
+  for (let d = from; d < to; d = addDays(d, 1)) byDate.set(d, { other: 0, energy: 0 });
   for (const t of txns) {
-    if (t.amount >= 0 || t.date < from || t.date >= today) continue;
+    if (t.amount >= 0 || t.date < from || t.date >= to) continue;
     if (t.source === 'receipt') continue; // receipts enrich, they don't double count
     if (recurringKeys.has(keyOf(t))) continue;
-    if (t.category === 'transfers' || t.category === 'savings') continue;
+    if (t.category === 'transfers' || t.category === 'savings' || t.category === 'internal') continue;
     if (Math.abs(t.amount) > 250) continue; // one-off big items are not "everyday"
     const s = byDate.get(t.date);
     if (!s) continue;
@@ -102,11 +105,12 @@ export function runForecast(input: ForecastInput): Forecast {
   const sched: Sched[] = [];
   for (const rec of input.recurring) {
     if (adj.dropKeys?.includes(rec.key)) continue;
-    const dates = nextDates(rec, addDays(input.start, -1), end, { ctSpread12: adj.ctSpread12 });
+    const dates = nextDates(rec, addDays(input.start, -1), end, { ctSpread12: adj.ctSpread12 || input.ctAlready12 });
     let fixed = rec.variable ? undefined : rec.last;
     if (rec.category === 'council_tax') {
       const mult = adj.ctMultiplier ?? 1;
-      fixed = rec.last * mult * (adj.ctSpread12 ? 10 / 12 : 1);
+      // Spreading over 12 lowers each payment, unless the amounts seen already are 12-month ones.
+      fixed = rec.last * mult * (adj.ctSpread12 && !input.ctAlready12 ? 10 / 12 : 1);
       if (fixed === 0) continue;
     }
     const scale = rec.direction === 'out' ? adj.scale?.[rec.category] ?? 1 : 1;

@@ -1,5 +1,7 @@
-// Fixed "today" so the demo is reproducible. Override with NEXT_PUBLIC_TODAY=YYYY-MM-DD.
-export const TODAY: string = process.env.NEXT_PUBLIC_TODAY || '2026-11-07';
+/** Today's date in the UK, whatever time zone the device or server is in. */
+export function todayISO(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+}
 
 export function toDate(s: string): Date {
   const [y, m, d] = s.split('-').map(Number);
@@ -56,4 +58,4 @@ export function shortDate(s: string): string {
 }
 
 export const gbp = (n: number, dp = 0) =>
-  (n < 0 ? '-£' : '£') + Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  (n < 0 ? '−£' : '£') + Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: dp, maximumFractionDigits: dp });

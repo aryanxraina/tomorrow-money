@@ -18,8 +18,6 @@ export function aiStatus() {
     localUrl: env('LOCAL_AI_BASE_URL') || 'http://127.0.0.1:11434/v1',
     localModel: env('LOCAL_AI_MODEL') || 'qwen3-600m',
     localOcrModel: env('LOCAL_OCR_MODEL') || 'ocr-en',
-    google: !!env('GOOGLE_MAPS_API_KEY'),
-    finnhub: !!env('FINNHUB_API_KEY'),
   };
 }
 

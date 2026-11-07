@@ -2,6 +2,15 @@
 // OCR on small print commonly reads "£" as E, { or 1 and "1" as l, so "£3.49" can arrive as "13 .49".
 // The printed TOTAL is used to settle those cases: the line prices must add up to it.
 
+/** A receipt as shown to the person to check. */
+export interface ParsedReceipt {
+  merchant: string;
+  date: string;
+  items: { name: string; qty: number; price: number; category?: string }[];
+  total: number;
+  paymentMethod?: string;
+}
+
 export interface ReadItem {
   name: string;
   qty: number;

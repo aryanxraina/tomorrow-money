@@ -1,13 +1,13 @@
 // Writes the raw inputs and the engine's results to .audit/engine.json for scripts/audit_engine.py.
 // Run both with: npm run audit
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { getPersonas } from '../src/lib/data/personas';
+import { FIXTURE_TODAY as TODAY, getPersonas } from '../tests/fixtures/personas';
 import { affordability, analyse, planForecast, safeDays, whatIf, type Analysis } from '../src/lib/engine/analyse';
 import { ESSENTIAL } from '../src/lib/engine/categorise';
-import { addDays, TODAY } from '../src/lib/engine/dates';
+import { addDays } from '../src/lib/engine/dates';
 import { runForecast, type Adjust, type Forecast } from '../src/lib/engine/forecast';
 import { combineAdjust } from '../src/lib/engine/plan';
-import { merchantKey, nextDates, type Recurring } from '../src/lib/engine/recurring';
+import { nextDates, txnKey, type Recurring } from '../src/lib/engine/recurring';
 
 const forecastSummary = (f: Forecast) => ({
   pBelow0: f.days.map((d) => d.pBelow0),
@@ -36,13 +36,13 @@ const adjustOf = (a: Adjust) => ({
 /** The engine's own code at the audit's run count, so a real bug can be told apart from sampling noise. */
 const LARGE_RUNS = 10_000;
 const large = (an: Analysis, adjust?: Adjust) => {
-  const f = runForecast({ start: an.today, balance: an.balance, recurring: an.inputs.recurring, pool: an.inputs.pool, known: an.inputs.known, adjust, days: 90, runs: LARGE_RUNS });
+  const f = runForecast({ start: an.today, balance: an.balance, recurring: an.inputs.recurring, pool: an.inputs.pool, known: an.inputs.known, adjust, days: 90, runs: LARGE_RUNS, ctAlready12: an.ctAlready12 });
   return { pBelow0: f.days.map((d) => d.pBelow0), p50: f.days.map((d) => d.p50) };
 };
 
 const people = getPersonas().map((p) => {
-  const an = analyse(p.answers, p.txns, TODAY);
-  const selected = an.actions.slice(0, 6);
+  const an = analyse(p.answers, p.txns, TODAY, { known: ['adults'] });
+  const selected = an.actions.filter((a) => a.kind !== 'claim');
   const adjust = combineAdjust(selected);
   const plan = planForecast(an, selected);
   const carRepair = whatIf(an, { extra: [{ date: addDays(TODAY, 7), amount: -400, label: 'Car repair' }] });
@@ -51,12 +51,14 @@ const people = getPersonas().map((p) => {
     id: p.id,
     name: p.name,
     answers: { balance: p.answers.balance, savings: p.answers.savings, incomeTypes: p.answers.incomeTypes, monthlyIncome: p.answers.monthlyIncome },
-    txns: p.txns.map((t) => ({ date: t.date, description: t.description, amount: t.amount, category: t.category, source: t.source, key: `${merchantKey(t.description)}${t.amount > 0 ? '|in' : '|out'}` })),
+    // After clean-up, because that's what every figure is worked out from. The audit checks the sums from here.
+    txns: an.txns.map((t) => ({ date: t.date, description: t.description, amount: t.amount, category: t.category, source: t.source, key: txnKey(t) })),
     recurring: an.recurring.map((r) => ({ key: r.key, label: r.label, category: r.category, direction: r.direction, cadence: r.cadence, everyDays: r.everyDays, dayOfMonth: r.dayOfMonth, lastDate: r.lastDate, last: r.last, variable: r.variable, amounts: r.amounts })),
-    schedule: schedule(an.recurring, false),
+    schedule: schedule(an.recurring, an.ctAlready12),
     known: an.known,
+    ctAlready12: an.ctAlready12,
     planAdjust: adjustOf(adjust),
-    planSchedule: schedule(an.recurring, !!adjust.ctSpread12),
+    planSchedule: schedule(an.recurring, !!adjust.ctSpread12 || an.ctAlready12),
     engine: {
       monthlyIn: an.summary.monthlyIn,
       monthlyOut: an.summary.monthlyOut,
@@ -71,8 +73,6 @@ const people = getPersonas().map((p) => {
       premiumAnnual: an.premiumAnnual,
       problems: an.problems.map((x) => ({ id: x.id, annualCost: x.annualCost ?? null, premium: !!x.premium })),
       pool: an.inputs.pool,
-      supportMonthly: an.supportMonthly,
-      supportOneOff: an.supportOneOff,
       forecast: forecastSummary(an.forecast),
       plan: forecastSummary(plan),
       carRepair: forecastSummary(carRepair),
