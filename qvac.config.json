@@ -1,0 +1,18 @@
+{
+  "serve": {
+    "models": {
+      "qwen3-600m": {
+        "model": "QWEN3_600M_INST_Q4",
+        "default": true,
+        "preload": true,
+        "config": { "ctx_size": 8192 }
+      },
+      "ocr-en": {
+        "model": "OCR_LATIN",
+        "default": true,
+        "preload": false,
+        "config": { "langList": ["en"] }
+      }
+    }
+  }
+}

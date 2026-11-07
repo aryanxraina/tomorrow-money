@@ -1,6 +1,9 @@
 import { getPersonas } from '../src/lib/data/personas';
 import { analyse, planForecast, safeDays, affordability } from '../src/lib/engine/analyse';
 import { TODAY } from '../src/lib/engine/dates';
+import { parseReceiptText } from '../src/lib/engine/receipt';
+import { inventedNumbers } from '../src/lib/ai/guard';
+import { extractJson } from '../src/lib/ai/provider';
 for (const p of getPersonas()) {
   const t0 = Date.now();
   const an = analyse(p.answers, p.txns, TODAY);
@@ -23,3 +26,25 @@ for (const p of getPersonas()) {
   console.log('upcoming', an.upcoming.slice(0,8).map(u=>`${u.date} ${u.label} ${Math.round(u.amount)}`).join('; '));
   if (an.tax) console.log('tax', an.tax);
 }
+
+// ---- Receipt parser: text recorded from real QVAC OCR runs on the two sample receipts ----
+const expect = (name: string, ok: boolean) => {
+  console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}`);
+  if (!ok) process.exitCode = 1;
+};
+const budget = parseReceiptText(
+  'BUDGETMART\nRetail Park,  Unit  (sample)\nDEMO  SAMPLE  NOT  REAL  RECEIPT\nDate:  05/11/2026  10  15  Till\nSemi  skimmed  milk 4pt  El. 55\nPasta 500g  {l.50\nChicken  breast  lkg  E5 .49\nBasmati  rice  lkg  El.39\nChopped  tomatoes  4pk  El.40\nCheddar 400g  {2.89\nApples  x6  El.29\nNappies  size  {3 .95\nToilet  roll  9pk  13 .49\nTOTAL  {22 . 95\nCARD  (CONTACTLESS)  {22 .95\nThank  you  for  shopping  with  Us',
+);
+console.log('\n=== Receipt parser and number guard');
+expect('budget: 9 items, total 22.95, reconciled', budget?.items.length === 9 && budget.total === 22.95 && budget.reconciled);
+expect('budget: misread 13.49 corrected to 3.49', budget?.items.find((i) => i.name.startsWith('Toilet'))?.price === 3.49);
+expect('budget: date and merchant', budget?.date === '2026-11-05' && budget.merchant === 'Budgetmart');
+const express = parseReceiptText(
+  'QUICKSTOP  EXPRESS\n12 High  Street  ( sample)\nDate:  06/11/2026  18:42  Till\nSemi  skimmed  milk 4pt  El.95\nWhite  bread  800g  El.45\nFree  range  eggs  x6  E2 .35\nBananas  x5  El.25\nPasta  500g  E2.30\nWashing  up  liquid  El.85\nTOTAL  Ell. 15\nCARD  (CONTACTLESS )  {ll.15',
+);
+expect('express: 6 items, total 11.15, reconciled', express?.items.length === 6 && express.total === 11.15 && express.reconciled);
+expect('no prices: returns null', parseReceiptText('Hello\nNo  prices  here') === null);
+expect('guard: invented number caught', inventedNumbers('You pay £999 a year.', { x: 418 }).join() === '999');
+expect('guard: supplied numbers pass', inventedNumbers('You pay £418 a year, 34% on 6 Dec, about £1,770.', { a: 418, b: '34%', c: '6 Dec', d: 1770 }).length === 0);
+expect('guard: Hindi digits read', inventedNumbers('₹ ९९९', { a: 1 }).join() === '999');
+expect('json: chatter around JSON', extractJson<{ a: number }>('Sure {not json} here: {"a": 1,} done')?.a === 1);

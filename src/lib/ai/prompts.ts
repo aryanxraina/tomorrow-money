@@ -33,6 +33,10 @@ export const RECEIPT_SYSTEM = `You read shop receipts. Return ONLY JSON, no othe
 {"merchant": string, "date": "YYYY-MM-DD", "items": [{"name": string, "qty": number, "price": number}], "total": number, "paymentMethod": string}
 "price" is the line total in GBP as a number. Use the receipt's own wording for item names. If unsure of a field, use null.`;
 
+export const RECEIPT_TEXT_SYSTEM = `This is text read from a shop receipt by OCR, so some characters may be wrong. Return ONLY JSON, no other text:
+{"merchant": string, "date": "YYYY-MM-DD", "items": [{"name": string, "qty": number, "price": number}], "total": number}
+"price" is the line total in GBP as a number, copied from the text. Never make up an item or a price. Leave out totals and payment lines from "items".`;
+
 export const SUBS_SYSTEM = `You find subscriptions and free trials in emails. Ignore one-off orders and deliveries.
 Return ONLY a JSON array, no other text:
 [{"service": string, "amount": number, "cycle": "monthly"|"yearly"|"weekly", "nextDate": "YYYY-MM-DD"|null, "status": "active"|"trial"|"price_rise", "note": string}]
