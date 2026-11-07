@@ -26,7 +26,7 @@ const tests = [
   ['places fuel', 'POST', '/api/places', { lat: 53.8, lng: -1.55, scenario: 'fuel', currentName: 'Esso', mode }],
   ['narrate en', 'POST', '/api/ai/narrate', { mode, lang: 'en', facts }],
   ['narrate pl', 'POST', '/api/ai/narrate', { mode, lang: 'pl', facts }],
-  ['agent', 'POST', '/api/ai/agent', { mode, lang: 'en', question: 'Can I afford £60 this week?', context: facts, facts: { amount: '£60', riskNext30DaysWithout: '55%', riskNext30DaysIfBoughtToday: '84%' } }],
+  ['agent', 'POST', '/api/ai/agent', { mode, lang: 'en', question: 'Can I afford £60 this week?', context: facts, facts: { verdict: 'not a safe time to buy this', amount: '£60', riskNext30DaysWithout: '55%', riskNext30DaysIfBoughtToday: '84%' } }],
   ['receipt express', 'POST', '/api/receipt', { mode, image: img('receipt-express.png'), sampleId: 'express' }],
   ['receipt budget', 'POST', '/api/receipt', { mode, image: img('receipt-budget.png'), sampleId: 'budget' }],
   ['subscriptions', 'POST', '/api/subscriptions', { mode, emails }],
@@ -38,7 +38,7 @@ for (const [name, method, path, body] of tests) {
   try {
     const r = await fetch(base + path, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
     const j = await r.json();
-    console.log(`${r.ok ? 'OK  ' : 'FAIL'} ${name.padEnd(16)} ${r.status} ${String(Date.now() - t0).padStart(6)}ms ${JSON.stringify(j).slice(0, 420)}`);
+    console.log(`${r.ok ? 'OK  ' : 'FAIL'} ${name.padEnd(16)} ${r.status} ${String(Date.now() - t0).padStart(6)}ms ${JSON.stringify(j).slice(0, 1100)}`);
     if (!r.ok) failed++;
   } catch (e) {
     failed++;

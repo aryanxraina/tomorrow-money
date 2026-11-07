@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { FingerprintRadar, ForecastChart } from '@/components/charts';
-import { AiBadge, Button, Card, CodeBadge, Muted, Pill, Severity, Stat, Why, type Used } from '@/components/ui';
+import { AiBadge, AiWriting, Button, Card, CodeBadge, Muted, Pill, Severity, Stat, Why, type Used } from '@/components/ui';
 import { planForecast, safeDays, whatIf } from '@/lib/engine/analyse';
 import { CATEGORY_LABEL, ESSENTIAL } from '@/lib/engine/categorise';
 import { addDays, gbp, niceDate, shortDate } from '@/lib/engine/dates';
@@ -15,7 +15,8 @@ import { useStore } from '@/lib/store';
 
 const STEPS: StepKey[] = ['understand', 'detect', 'predict', 'support', 'plan'];
 const riskyDays = (fc: { days: { pBelow0: number }[] }) => fc.days.filter((d) => d.pBelow0 >= 0.25).length;
-const narrationCache = new Map<string, { texts: Record<StepKey, string>; used: Used; model?: string }>();
+type Narration = { texts: Partial<Record<StepKey, string>>; used: Used; model?: string };
+const narrationCache = new Map<string, Narration>();
 
 export default function Dashboard() {
   const profile = useProfile();
@@ -26,7 +27,7 @@ export default function Dashboard() {
   const selectedStore = useStore((s) => (profile ? s.selected[profile.id] : undefined));
   const setSelected = useStore((s) => s.setSelected);
   const [shock, setShock] = useState<{ label: string; daily?: number; extra?: number } | null>(null);
-  const [narr, setNarr] = useState<{ texts: Record<StepKey, string>; used: Used; model?: string } | null>(null);
+  const [finishedKey, setFinishedKey] = useState('');
 
   const selectedIds = useMemo(() => selectedStore ?? an?.actions.slice(0, 6).map((a) => a.id) ?? [], [selectedStore, an]);
   const selectedActions = useMemo(() => (an ? an.actions.filter((a) => selectedIds.includes(a.id)) : []), [an, selectedIds]);
@@ -39,29 +40,28 @@ export default function Dashboard() {
     });
   }, [an, shock]);
   const facts = useMemo(() => (profile && an && plan ? buildFacts(profile, an, plan, selectedActions.map((a) => a.title)) : null), [profile, an, plan, selectedActions]);
-  const rules = useMemo(() => (facts ? templates(facts) : null), [facts]);
+  const rules = useMemo(() => (facts ? templates(facts, lang) : null), [facts, lang]);
+
+  const narrationKey = profile ? `${profile.id}|${mode}|${lang}|${selectedIds.join(',')}|${profile.txns.length}` : '';
+  const narr = narrationCache.get(narrationKey) ?? null;
+  const writing = !!narrationKey && !narr && finishedKey !== narrationKey;
 
   useEffect(() => {
-    if (!facts || !profile) return;
-    const key = `${profile.id}|${mode}|${lang}|${selectedIds.join(',')}|${profile.txns.length}`;
-    const hit = narrationCache.get(key);
-    if (hit) {
-      setNarr(hit);
-      return;
-    }
-    setNarr(null);
+    if (!facts || !rules || narrationCache.has(narrationKey)) return;
     let alive = true;
-    postJSON<{ texts: Record<StepKey, string> | null; used: Used; model?: string }>('/api/ai/narrate', { mode, lang, facts }).then((r) => {
-      if (!alive || !r.texts) return;
-      const v = { texts: r.texts, used: r.used, model: r.model };
-      narrationCache.set(key, v);
-      setNarr(v);
-    }).catch(() => undefined);
+    postJSON<{ texts: Partial<Record<StepKey, string>> | null; used: Used; model?: string }>('/api/ai/narrate', { mode, lang, facts, draft: rules })
+      .then((r) => {
+        if (r.texts) narrationCache.set(narrationKey, { texts: r.texts, used: r.used, model: r.model });
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive) setFinishedKey(narrationKey);
+      });
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id, mode, lang, selectedIds.join(','), profile?.txns.length]);
+  }, [narrationKey]);
 
   if (!profile || !an || !plan || !rules) {
     return (
@@ -74,22 +74,25 @@ export default function Dashboard() {
     );
   }
 
-  const text = (k: StepKey) => narr?.texts?.[k] || rules[k];
-  const used: Used = narr ? narr.used : 'rules';
   const sdNow = Math.round(an.bufferDays);
   const sdBase = Math.round(safeDays(an, an.forecast, profile.answers.savings));
   const sdPlan = Math.round(safeDays(an, plan, profile.answers.savings));
   const f = an.forecast;
 
-  const Narr = ({ k }: { k: StepKey }) => (
-    <div className="rounded-xl bg-violet-50 p-3" dir={isRtl(lang) ? 'rtl' : 'ltr'}>
-      <p className="text-[15px] leading-relaxed text-violet-950">{text(k)}</p>
-      <div className="mt-2 flex flex-wrap gap-1">
-        <AiBadge used={used} model={narr?.model} />
-        <CodeBadge />
+  // A step the AI didn't write acceptably shows the rules wording, with the rules badge.
+  const narrate = (k: StepKey) => {
+    const ai = narr?.texts?.[k];
+    return (
+      <div className="rounded-xl bg-violet-50 p-3" dir={isRtl(lang) ? 'rtl' : 'ltr'}>
+        <p className="text-[15px] leading-relaxed text-violet-950">{ai || rules[k]}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <AiBadge used={ai ? narr?.used : 'rules'} model={ai ? narr?.model : undefined} />
+          <CodeBadge />
+          {writing && <AiWriting mode={mode} />}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -114,6 +117,10 @@ export default function Dashboard() {
           <Stat label="With your plan" value={sdPlan} sub="in 90 days" tone="green" />
         </div>
         <Muted className="mt-2">{t(lang, 'safeDaysHint')}.</Muted>
+        <Why>
+          <p>Safe days = your balance plus savings, divided by what your essentials cost each day. They count your money only, not income that may arrive.</p>
+          <p>“In 90 days” uses the most likely balance from the forecast, with and without the plan steps you have ticked. Computed by code, not by AI.</p>
+        </Why>
       </Card>
 
       {/* Step tabs */}
@@ -132,7 +139,7 @@ export default function Dashboard() {
 
       {step === 'understand' && (
         <div className="space-y-4">
-          <Narr k="understand" />
+          {narrate('understand')}
           <Card>
             <div className="grid grid-cols-3 gap-2">
               <Stat label="In / month" value={gbp(an.summary.monthlyIn)} />
@@ -203,7 +210,7 @@ export default function Dashboard() {
 
       {step === 'detect' && (
         <div className="space-y-3">
-          <Narr k="detect" />
+          {narrate('detect')}
           {an.premiumAnnual > 0 && (
             <Card className="bg-rose-50 ring-rose-100">
               <div className="text-sm text-rose-900">Extra costs you pay for having less money (the “poverty premium”)</div>
@@ -243,7 +250,7 @@ export default function Dashboard() {
 
       {step === 'predict' && (
         <div className="space-y-3">
-          <Narr k="predict" />
+          {narrate('predict')}
           <Card>
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">Your next 90 days</h3>
@@ -253,6 +260,12 @@ export default function Dashboard() {
               <p className="mt-1 text-sm">
                 <b className="text-rose-700">{Math.round(f.firstRisk.p * 100)}% chance</b> of going below £0 on <b>{niceDate(f.firstRisk.date)}</b>
                 {f.firstRisk.trigger ? ` (around ${f.firstRisk.trigger.label}, ${gbp(-f.firstRisk.trigger.amount)})` : ''}.
+                {f.maxRisk.p > f.firstRisk.p && (
+                  <>
+                    {' '}
+                    The risk reaches <b className="text-rose-700">{Math.round(f.maxRisk.p * 100)}%</b> by <b>{niceDate(f.maxRisk.date)}</b>.
+                  </>
+                )}
               </p>
             ) : (
               <p className="mt-1 text-sm text-emerald-700">Low risk of running out in the next 90 days.</p>
@@ -323,7 +336,7 @@ export default function Dashboard() {
 
       {step === 'support' && (
         <div className="space-y-3">
-          <Narr k="support" />
+          {narrate('support')}
           {an.support.length > 0 && (
             <Card className="bg-emerald-50 ring-emerald-100">
               <div className="text-sm text-emerald-900">Money you may be missing</div>
@@ -369,7 +382,7 @@ export default function Dashboard() {
 
       {step === 'plan' && (
         <div className="space-y-3">
-          <Narr k="plan" />
+          {narrate('plan')}
           <Card>
             <div className="grid grid-cols-2 gap-3">
               <Stat

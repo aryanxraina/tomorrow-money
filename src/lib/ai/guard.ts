@@ -24,6 +24,31 @@ export function numbersIn(text: string): number[] {
   return out;
 }
 
+/** Small models sometimes write dollars. Every amount in this app is in pounds. */
+export const poundsOnly = (text: string) => text.replace(/\bUS\$|\$\s?(?=\d)/g, '£').replace(/\bUSD\s?(?=\d)/g, '£');
+
+const ENGLISH_WORDS = /\b(the|and|your|you|with|for|have|this|that|money|month|is|are|to|of)\b/gi;
+
+/** Rejects text in the wrong language, for example English echoed back when Polish was requested. */
+export function matchesLanguage(text: string, lang: string): boolean {
+  if (/[Ѐ-ӿ]/.test(text)) return false; // stray Cyrillic: small models sometimes mix scripts
+  const letters = text.replace(/[^\p{L}]/gu, '').length || 1;
+  const count = (re: RegExp) => (text.match(re) || []).join('').length;
+  if (lang === 'hi') return count(/[ऀ-ॿ]/g) / letters > 0.5;
+  if (lang === 'ur') return count(/[؀-ۿ]/g) / letters > 0.5;
+  if (lang === 'pl') {
+    const words = text.split(/\s+/).length || 1;
+    return (text.match(ENGLISH_WORDS) || []).length / words < 0.2;
+  }
+  return true;
+}
+
+/** Numbers in the app's own sentence that a rewrite dropped. A rewrite must keep them all. */
+export function droppedNumbers(rewrite: string, draft: string): number[] {
+  const kept = new Set(numbersIn(rewrite));
+  return numbersIn(draft).filter((n) => !kept.has(n));
+}
+
 /**
  * Numbers in `text` the app never supplied. Allows the source numbers, plus the same number rounded
  * or written with pence ("£418.00" for 418), and everyday counts. An empty list means the text is clean.

@@ -1,10 +1,15 @@
 {
   "serve": {
     "models": {
-      "qwen3-600m": {
-        "model": "QWEN3_600M_INST_Q4",
+      "qwen3-4b": {
+        "model": "QWEN3_4B_INST_Q4_K_M",
         "default": true,
         "preload": true,
+        "config": { "ctx_size": 8192 }
+      },
+      "qwen3-600m": {
+        "model": "QWEN3_600M_INST_Q4",
+        "preload": false,
         "config": { "ctx_size": 8192 }
       },
       "ocr-en": {

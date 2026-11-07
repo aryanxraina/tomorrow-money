@@ -1,17 +1,18 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { AiBadge, Button, Card, inputCls, Muted, Why, type Used } from '@/components/ui';
+import { AiBadge, AiWriting, Button, Card, CodeBadge, inputCls, Muted, Why, type Used } from '@/components/ui';
 import { affordability, planForecast } from '@/lib/engine/analyse';
 import { gbp, niceDate } from '@/lib/engine/dates';
 import { postJSON, useAnalysis, useEffectiveMode, useLang, useProfile } from '@/lib/hooks';
 import { isRtl } from '@/lib/i18n';
-import { buildFacts } from '@/lib/narrative';
+import { affordVerdict, buildFacts, rulesAnswer } from '@/lib/narrative';
 import { useStore } from '@/lib/store';
 
 interface Msg {
   role: 'user' | 'assistant';
   content: string;
+  verdict?: string;
   used?: Used;
   model?: string;
   facts?: Record<string, unknown>;
@@ -54,15 +55,23 @@ export default function Ask() {
     const amountMatch = text.match(/£\s?(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s?(?:pounds|quid|zł|gbp)/i);
     const isAfford = /afford|buy|spend|stać|kupić|خرید|खरीद/i.test(text) && amountMatch;
     let facts: Record<string, unknown> | undefined;
+    let verdict: string | undefined;
     if (isAfford) {
       const amount = Number(amountMatch![1] || amountMatch![2]);
       const a = affordability(an, amount, an.today);
+      // Safe means: the purchase leaves the 30-day risk low and doesn't noticeably raise it. Decided here, never by the AI.
+      const safe = a.riskAfter < 0.25 && a.riskAfter - a.riskBefore < 0.1;
+      const saferDate = a.saferDate ? niceDate(a.saferDate.date) : undefined;
+      const riskBefore = `${Math.round(a.riskBefore * 100)}%`;
+      const riskAfter = `${Math.round(a.riskAfter * 100)}%`;
+      verdict = affordVerdict({ amount: gbp(amount), riskBefore, riskAfter, safe, saferDate: safe ? undefined : saferDate }, lang);
       facts = {
+        verdict: safe ? 'looks OK' : 'not a safe time to buy this',
         amount: gbp(amount),
-        riskNext30DaysWithout: `${Math.round(a.riskBefore * 100)}%`,
-        riskNext30DaysIfBoughtToday: `${Math.round(a.riskAfter * 100)}%`,
+        riskNext30DaysWithout: riskBefore,
+        riskNext30DaysIfBoughtToday: riskAfter,
         lowestLikelyBalanceAfter: `${gbp(a.lowestAfter.value)} on ${niceDate(a.lowestAfter.date)}`,
-        saferDate: a.saferDate ? `${niceDate(a.saferDate.date)} (risk ${Math.round(a.saferDate.risk * 100)}%)` : 'none in the next 30 days',
+        saferDate: a.saferDate ? `${saferDate} (risk ${Math.round(a.saferDate.risk * 100)}%)` : 'none in the next 30 days',
       };
     }
     const history = msgs.map((m) => ({ role: m.role, content: m.content }));
@@ -70,18 +79,16 @@ export default function Ask() {
     setQ('');
     setBusy(true);
     try {
-      const r = await postJSON<{ text: string | null; used: Used; model?: string }>('/api/ai/agent', { mode, lang, question: text, context, facts, history });
-      let content = r.text;
-      let used = r.used;
-      if (!content) {
-        used = 'rules';
-        content = facts
-          ? `Buying ${facts.amount} today changes your chance of going below £0 in the next 30 days from ${facts.riskNext30DaysWithout} to ${facts.riskNext30DaysIfBoughtToday}. Safer date: ${facts.saferDate}.`
-          : context.firstRisk
-            ? `Your first risky day is ${context.firstRisk.date} (${context.firstRisk.chanceBelowZero} chance of going below £0). Your plan brings the highest risk down to ${context.highestRiskWithPlan}.`
-            : `Your money looks steady for the next 90 days. Next big bill: ${context.upcomingBigBills[0]?.what ?? 'none soon'}.`;
+      let r: { text: string | null; used: Used; model?: string };
+      try {
+        r = await postJSON('/api/ai/agent', { mode, lang, question: text, context, facts, history });
+      } catch {
+        r = { text: null, used: 'rules' };
       }
-      setMsgs((m) => [...m, { role: 'assistant', content: content!, used, model: r.model, facts }]);
+      // The verdict alone is the whole answer in rules mode; otherwise the AI adds its explanation below it.
+      const content = r.text ?? (verdict ? '' : rulesAnswer(context, lang));
+      const used: Used = r.text ? r.used : 'rules';
+      setMsgs((m) => [...m, { role: 'assistant', content, verdict, used, model: r.model, facts }]);
     } finally {
       setBusy(false);
       setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
@@ -105,7 +112,15 @@ export default function Ask() {
         {msgs.map((m, i) => (
           <div key={i} className={m.role === 'user' ? 'flex justify-end' : ''}>
             <div className={`max-w-[88%] rounded-2xl px-4 py-3 ${m.role === 'user' ? 'bg-violet-700 text-white' : 'bg-white shadow-sm ring-1 ring-black/5'}`} dir={m.role === 'assistant' && isRtl(lang) ? 'rtl' : 'ltr'}>
-              <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{m.content}</p>
+              {m.verdict && (
+                <div className="mb-2 rounded-xl bg-violet-50 p-3">
+                  <p className="text-[15px] font-medium leading-relaxed text-violet-950">{m.verdict}</p>
+                  <div className="mt-1">
+                    <CodeBadge />
+                  </div>
+                </div>
+              )}
+              {m.content && <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{m.content}</p>}
               {m.role === 'assistant' && (
                 <div className="mt-2">
                   <AiBadge used={m.used} model={m.model} />
@@ -123,7 +138,7 @@ export default function Ask() {
             </div>
           </div>
         ))}
-        {busy && <div className="text-sm text-slate-500">Thinking…</div>}
+        {busy && <AiWriting mode={mode} />}
         <div ref={endRef} />
       </div>
       <form

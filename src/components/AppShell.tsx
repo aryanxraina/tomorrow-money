@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { APP_NAME, useAiStatus, useLang, useMounted, useOnline, useProfile } from '@/lib/hooks';
+import { APP_NAME, useAiStatus, useEffectiveMode, useLang, useMounted, useOnline, useProfile } from '@/lib/hooks';
 import { isRtl, LANGS, t } from '@/lib/i18n';
 import { useStore, type Mode } from '@/lib/store';
 import type { Lang } from '@/lib/types';
@@ -45,6 +45,21 @@ function ModeSwitch() {
         ))}
       </div>
       <span className="hidden text-xs text-slate-500 sm:inline">{effective === 'cloud' ? 'AI: cloud' : 'AI: on your device'}</span>
+    </div>
+  );
+}
+
+/** Says plainly when nothing leaves the device, and that the app still works with no model running. */
+function PrivacyBanner() {
+  const mode = useEffectiveMode();
+  const online = useOnline();
+  const status = useAiStatus();
+  if (mode !== 'local') return null;
+  const noModel = status && !status.localUp;
+  return (
+    <div role="status" className={`px-4 py-1.5 text-center text-xs font-medium ${noModel ? 'bg-slate-100 text-slate-700' : 'bg-emerald-50 text-emerald-900'}`}>
+      {!online && 'You are offline. '}On-device mode: nothing leaves your device.
+      {noModel && ' No local model is running, so the app’s own rules are writing the text.'}
     </div>
   );
 }
@@ -99,6 +114,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+      <PrivacyBanner />
       <main className="mx-auto max-w-2xl px-4 pb-28 pt-4" dir={isRtl(lang) ? 'rtl' : 'ltr'}>
         {children}
       </main>

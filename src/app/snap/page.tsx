@@ -1,10 +1,10 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { AiBadge, Button, Card, inputCls, Muted, Pill, type Used } from '@/components/ui';
+import { AiBadge, AiWriting, Button, Card, inputCls, Muted, Pill, type Used } from '@/components/ui';
 import { SAMPLE_RECEIPTS, type ParsedReceipt } from '@/lib/data/samples';
 import { diffDays, gbp, shortDate, TODAY } from '@/lib/engine/dates';
-import { postJSON, useEffectiveMode, useProfile } from '@/lib/hooks';
+import { postJSON, useAiStatus, useEffectiveMode, useProfile } from '@/lib/hooks';
 import { useStore } from '@/lib/store';
 import type { Txn } from '@/lib/types';
 
@@ -22,6 +22,7 @@ async function fileToDataUrl(file: Blob): Promise<string> {
 export default function Snap() {
   const profile = useProfile();
   const mode = useEffectiveMode();
+  const status = useAiStatus();
   const addTxn = useStore((s) => s.addTxn);
   const addedAll = useStore((s) => s.added);
   const added = useMemo(() => (profile ? addedAll[profile.id] || [] : []), [addedAll, profile]);
@@ -50,6 +51,10 @@ export default function Snap() {
         setRec({ merchant: '', date: TODAY, items: [{ name: '', qty: 1, price: 0 }], total: 0 });
         setUsed(null);
       }
+    } catch {
+      setErr('Could not read that receipt.');
+      setRec({ merchant: '', date: TODAY, items: [{ name: '', qty: 1, price: 0 }], total: 0 });
+      setUsed(null);
     } finally {
       setBusy(false);
     }
@@ -150,7 +155,7 @@ export default function Snap() {
           ))}
         </div>
         <Muted>
-          Mode: {mode === 'local' ? 'on-device (the photo stays on this device)' : 'cloud AI reads the photo'}. Sample receipts are labelled “demo”.
+          {mode === 'local' || !status?.cloud ? 'On-device: the photo stays on this device.' : 'Cloud AI reads the photo.'} Sample receipts are labelled “demo”.
         </Muted>
       </Card>
 
@@ -160,7 +165,11 @@ export default function Snap() {
           <img src={preview} alt="Receipt" className="max-h-72 rounded-lg" />
         </Card>
       )}
-      {busy && <Card>Reading your receipt…</Card>}
+      {busy && (
+        <Card>
+          <AiWriting mode={mode} what="Reading your receipt" />
+        </Card>
+      )}
       {err && <Card className="bg-amber-50 text-sm text-amber-900">{err} Type the items below instead.</Card>}
       {saved && <Card className="bg-emerald-50 text-sm text-emerald-900">✓ {saved}</Card>}
 
@@ -199,7 +208,7 @@ export default function Snap() {
             <span>Total</span>
             <span>{gbp(total, 2)}</span>
           </div>
-          {rec.total && Math.abs(rec.total - total) > 0.05 ? <Muted>The receipt says {gbp(rec.total, 2)}. Check the items above.</Muted> : null}
+          {rec.total > 0 && Math.abs(rec.total - total) > 0.05 ? <Muted>The receipt says {gbp(rec.total, 2)}. Check the items above.</Muted> : null}
           {match ? (
             <div className="rounded-xl bg-sky-50 p-3 text-sm text-sky-900">
               This matches your card payment “{match.description}” on {shortDate(match.date)}. We’ll attach the items to it so it isn’t counted twice.

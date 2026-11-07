@@ -1,5 +1,6 @@
-import { ask, extractJson, type Mode } from '@/lib/ai/provider';
+import { ask, extractJson, readBody, safeMode, type Mode } from '@/lib/ai/provider';
 import { SUBS_SYSTEM } from '@/lib/ai/prompts';
+import { poundsOnly } from '@/lib/ai/guard';
 import type { SampleEmail } from '@/lib/data/samples';
 
 export interface Sub {
@@ -13,6 +14,9 @@ export interface Sub {
 
 const nice = (d: string | null) => (d ? new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : 'soon');
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const DATE_RE = /(\d{1,2}) (january|february|march|april|may|june|july|august|september|october|november|december) (\d{4})/gi;
+const amountsIn = (text: string) => [...text.matchAll(/£(\d+(?:\.\d{2})?)/g)].map((m) => Number(m[1]));
+const datesIn = (text: string) => [...text.matchAll(DATE_RE)].map((m) => `${m[3]}-${String(MONTHS.indexOf(m[2].toLowerCase()) + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}`);
 
 // Rules fallback: works with no AI at all.
 function rulesExtract(emails: SampleEmail[]): Sub[] {
@@ -20,12 +24,10 @@ function rulesExtract(emails: SampleEmail[]): Sub[] {
   for (const e of emails) {
     const text = `${e.subject} ${e.body}`;
     if (/order|shipped|delivery|on its way/i.test(text) && !/subscription|membership|renew/i.test(text)) continue;
-    if (!/renew|subscription|membership|trial|per month|a month|every month|plan/i.test(text)) continue;
-    const amounts = [...text.matchAll(/£(\d+(?:\.\d{2})?)/g)].map((m) => Number(m[1]));
+    if (!/renew|subscription|subskrypcj|membership|trial|per month|a month|every month|plan/i.test(text)) continue;
+    const amounts = amountsIn(text);
     if (!amounts.length) continue;
-    const dates = [...text.matchAll(/(\d{1,2}) (january|february|march|april|may|june|july|august|september|october|november|december) (\d{4})/gi)].map(
-      (m) => `${m[3]}-${String(MONTHS.indexOf(m[2].toLowerCase()) + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}`,
-    );
+    const dates = datesIn(text);
     const status: Sub['status'] = /trial/i.test(text) ? 'trial' : /will cost|price/i.test(text) ? 'price_rise' : 'active';
     const service = (e.from.split('@')[1] || e.from).split('.')[0].replace(/^\w/, (c) => c.toUpperCase());
     const amount = status === 'price_rise' ? amounts[0] : amounts[amounts.length - 1];
@@ -42,15 +44,34 @@ function rulesExtract(emails: SampleEmail[]): Sub[] {
   return out;
 }
 
+/**
+ * The model's list only counts if it is at least as complete as the rules' list, with no duplicates,
+ * and every amount and date is really in the emails. These figures feed the forecast, so a wrong one
+ * would change the user's numbers.
+ */
+function trustworthy(subs: Sub[], emailText: string, baseline: Sub[]): boolean {
+  const amounts = new Set(amountsIn(emailText));
+  const dates = new Set(datesIn(emailText));
+  const names = subs.map((s) => String(s.service).toLowerCase());
+  if (subs.length < baseline.length || new Set(names).size !== names.length) return false;
+  return subs.every((s) => amounts.has(Number(s.amount)) && (s.nextDate === null || dates.has(s.nextDate)) && ['monthly', 'yearly', 'weekly'].includes(s.cycle) && ['active', 'trial', 'price_rise'].includes(s.status));
+}
+
 export async function POST(req: Request) {
-  const { mode, emails } = (await req.json()) as { mode: Mode; emails: SampleEmail[] };
+  const body = await readBody<{ mode: Mode; emails: SampleEmail[] }>(req);
+  if (!Array.isArray(body?.emails)) return Response.json({ subs: [], used: 'rules', error: 'bad request' }, { status: 400 });
+  const { emails } = body;
   const text = emails.map((e) => `FROM: ${e.from}\nSUBJECT: ${e.subject}\nDATE: ${e.date}\n${e.body}`).join('\n---\n');
+  const baseline = rulesExtract(emails);
   try {
-    const r = await ask({ mode, system: SUBS_SYSTEM, prompt: text, maxOutputTokens: 900 });
+    const r = await ask({ mode: safeMode(body.mode), system: SUBS_SYSTEM, prompt: text, maxOutputTokens: 900 });
     const subs = extractJson<Sub[]>(r.text);
-    if (Array.isArray(subs) && subs.length) return Response.json({ subs, used: r.used, model: r.model });
+    if (Array.isArray(subs) && subs.length && trustworthy(subs, text, baseline)) {
+      return Response.json({ subs: subs.map((s) => ({ ...s, note: poundsOnly(String(s.note || '')) })), used: r.used, model: r.model });
+    }
+    console.warn('[subs] AI list failed the check against the emails: using rules');
   } catch (e) {
     console.warn('[subs] AI failed', (e as Error).message);
   }
-  return Response.json({ subs: rulesExtract(emails), used: 'rules' });
+  return Response.json({ subs: baseline, used: 'rules' });
 }

@@ -104,10 +104,15 @@ export function useEffectiveMode(): Mode {
   return mode;
 }
 
+const subscribeNever = () => () => undefined;
+
+/** False during the server render and hydration, true afterwards (state lives in localStorage). */
 export function useMounted() {
-  const [m, setM] = useState(false);
-  useEffect(() => setM(true), []);
-  return m;
+  return useSyncExternalStore(
+    subscribeNever,
+    () => true,
+    () => false,
+  );
 }
 
 export async function postJSON<T>(url: string, body: unknown): Promise<T> {
@@ -120,6 +125,7 @@ export interface AiStatus {
   cloudName: string | null;
   localUrl: string;
   localModel: string;
+  localUp: boolean;
   google: boolean;
   finnhub: boolean;
 }

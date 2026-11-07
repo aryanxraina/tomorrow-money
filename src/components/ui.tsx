@@ -72,6 +72,16 @@ export function AiBadge({ used, model }: { used?: Used | null; model?: string })
   );
 }
 
+/** Shown while a model is writing, so slow on-device answers don't look broken. */
+export function AiWriting({ mode, what = 'AI is writing' }: { mode?: 'auto' | 'cloud' | 'local'; what?: string }) {
+  return (
+    <div role="status" className="flex items-center gap-2 text-sm text-slate-500">
+      <span className="h-2 w-2 animate-pulse rounded-full bg-violet-500" />
+      {what}…{mode === 'local' ? ' on your device, this can take a moment.' : ''}
+    </div>
+  );
+}
+
 export function CodeBadge() {
   return <Pill tone="violet">Computed by code</Pill>;
 }
