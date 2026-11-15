@@ -43,7 +43,7 @@ export default function More() {
         <Row icon={<FileSpreadsheet size={20} aria-hidden />} title="Statements and transactions" sub="Add a statement or correct a category" href="/spending?view=transactions" />
         <Row icon={<Repeat size={20} aria-hidden />} title="Subscriptions" sub="What you pay for regularly" href="/subscriptions" />
         <Row icon={<MapPin size={20} aria-hidden />} title="Nearby" sub="Free cash machines, advice and food banks" href="/nearby" />
-        <Row icon={<MessagesSquare size={20} aria-hidden />} title="Community Pulse" sub="Money problems people talk about on Reddit" href="/community" />
+        <Row icon={<MessagesSquare size={20} aria-hidden />} title="Community Pulse" sub="Money problems on Reddit, YouTube and in the news" href="/community" />
         <Row icon={<BookOpen size={20} aria-hidden />} title="Learn about investing" sub="When it makes sense, and how it works" href="/learn" />
         <Row icon={<Pencil size={20} aria-hidden />} title="Your details" sub="See and change your answers" href="/details" />
       </Card>
@@ -72,7 +72,7 @@ export default function More() {
               : 'No AI is running, so the app’s own rules write everything. All forecasts and plans still work, and the coach answers set questions.'}
           </p>
           <Switch label="Keep everything on this device" hint="Blocks anything that would contact another service." checked={mode === 'local'} onChange={(on) => setMode(on ? 'local' : 'auto')} />
-          {status && <p className="text-sm text-mut">Community Pulse: {status.reddit === 'api' ? 'Reddit’s official API.' : status.reddit === 'rss' ? 'Reddit’s public feeds, no key needed.' : 'Reddit is turned off, so it shows sample posts.'} It never contacts Reddit while everything is kept on this device.</p>}
+          {status && <p className="text-sm text-mut">Community Pulse: {status.reddit === 'api' ? 'Reddit’s official API.' : status.reddit === 'rss' ? 'Reddit’s public feeds, no key needed.' : 'Reddit is turned off, so it shows sample posts.'} It never contacts Reddit, YouTube or news sites while everything is kept on this device.</p>}
           <Why label="What’s stored, and where?">
             <p>Your answers and transactions are saved in this browser, on this device. Clearing your browser data or losing the device loses them, so download a copy from time to time.</p>
           </Why>

@@ -7,17 +7,32 @@ import { topicById, topicsForUser, type Pulse, type PulsePost } from '@/lib/comm
 import { niceDate } from '@/lib/engine/dates';
 import { postJSON, useEffectiveMode, useMoney } from '@/lib/hooks';
 
+type Source = 'reddit' | 'youtube' | 'news';
+
 interface CommunityResponse {
-  source: 'reddit' | 'sample';
+  source: 'live' | 'sample';
   note: string | null;
   posts: PulsePost[];
   pulse: Pulse;
+  /** Posts per source, when live. */
+  counts: Record<Source, number> | null;
   fetchedAt?: string;
   subreddits?: string[];
   via?: 'api' | 'rss';
-  /** Set while a background collection is still adding posts. */
+  /** Set while a background Reddit collection is still adding posts. */
   progress: { done: number; total: number } | null;
+  /** True while YouTube or news is collecting for the first time. */
+  collecting?: { youtube: boolean; news: boolean };
 }
+
+const SOURCE_NAME: Record<Source, string> = { reddit: 'Reddit', youtube: 'YouTube', news: 'UK news' };
+const READ_ON: Record<Source, string> = { reddit: 'Read on Reddit', youtube: 'Watch on YouTube', news: 'Read the article' };
+const sourceOf = (p: PulsePost): Source => p.source ?? 'reddit';
+/** "Reddit, YouTube and UK news" */
+const listSources = (ids: Source[]) => {
+  const names = ids.map((s) => SOURCE_NAME[s]);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : (names[0] ?? '');
+};
 
 const LINE_COLOURS = ['var(--chart-line)', 'var(--link)', 'var(--warn)', 'var(--chart-axis)'];
 const axisTick = { fontSize: 11, fill: 'var(--chart-axis)' };
@@ -47,13 +62,14 @@ export default function Community() {
   const data = result?.data ?? null;
   const loading = result?.key !== key;
   const collecting = data?.progress ?? null;
+  const othersCollecting = !!(data?.collecting?.youtube || data?.collecting?.news);
 
-  // While Reddit posts are still being collected, check again every few seconds.
+  // While posts are still being collected, check again every few seconds.
   useEffect(() => {
-    if (!collecting || loading) return;
+    if ((!collecting && !othersCollecting) || loading) return;
     const t = setTimeout(() => setPoll((n) => n + 1), POLL_MS);
     return () => clearTimeout(t);
-  }, [collecting, loading]);
+  }, [collecting, othersCollecting, loading]);
 
   const refresh = useCallback(async () => {
     await postJSON<CommunityResponse>('/api/community', { mode, refresh: true }).catch(() => null);
@@ -73,8 +89,9 @@ export default function Community() {
   }, [mineAvailable, pulse]);
   const chartData = pulse?.months.map((m) => ({ month: monthLabel(m.month), ...Object.fromEntries(chartTopics.map((id) => [id, m.counts[id] ?? 0])) })) ?? [];
 
-  const live = data?.source === 'reddit';
+  const live = data?.source === 'live';
   const help = active ? topicById(active) : undefined;
+  const liveSources = (Object.keys(SOURCE_NAME) as Source[]).filter((s) => (data?.counts?.[s] ?? 0) > 0);
 
   return (
     <div className="space-y-3">
@@ -83,15 +100,34 @@ export default function Community() {
 
       <Card className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          {data && (live ? <Chip tone="good">From Reddit</Chip> : <Chip tone="warn">Sample posts</Chip>)}
-          {live && data?.subreddits && <span className="text-xs text-mut">{data.subreddits.map((s) => `r/${s}`).join(', ')}</span>}
+          {data &&
+            (live ? (
+              liveSources.map((s) => (
+                <Chip key={s} tone="good">
+                  {SOURCE_NAME[s]} · {data.counts?.[s]}
+                </Chip>
+              ))
+            ) : (
+              <Chip tone="warn">Sample posts</Chip>
+            ))}
+          {live && (data?.counts?.reddit ?? 0) > 0 && data?.subreddits && <span className="text-xs text-mut">{data.subreddits.map((s) => `r/${s}`).join(', ')}</span>}
         </div>
         {data?.source === 'sample' && <p className="text-sm">Every post below is a made-up sample. {data.note}</p>}
-        {live && data?.fetchedAt && (
+        {live && (
           <p className="text-sm text-mut">
-            Collected {new Date(data.fetchedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-            {data.via === 'api' ? ' with the official Reddit API.' : ' from Reddit’s public feeds.'} {data.note}
+            {(data?.counts?.reddit ?? 0) > 0 && data?.fetchedAt && (
+              <>
+                Reddit collected {new Date(data.fetchedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                {data.via === 'api' ? ' with the official Reddit API.' : ' from Reddit’s public feeds.'}{' '}
+              </>
+            )}
+            {data?.note}
           </p>
+        )}
+        {othersCollecting && !collecting && (
+          <div role="status" className="text-sm font-medium">
+            Collecting from {listSources((['youtube', 'news'] as Source[]).filter((s) => data?.collecting?.[s as 'youtube' | 'news']))}. Posts appear as they arrive.
+          </div>
         )}
         {collecting && (
           <div role="status" className="space-y-1">
@@ -105,7 +141,7 @@ export default function Community() {
         )}
         {mode !== 'local' && !collecting && (
           <Button variant="ghost" className="!px-0 !py-1 !text-sm" onClick={refresh} disabled={loading}>
-            Collect again from Reddit
+            Collect again
           </Button>
         )}
       </Card>
@@ -116,7 +152,7 @@ export default function Community() {
         <>
           <Card>
             <div className="grid grid-cols-2 gap-3">
-              <Stat label="Posts analysed" value={pulse.total} sub={live ? 'from Reddit' : 'samples'} />
+              <Stat label="Posts analysed" value={pulse.total} sub={live ? `from ${listSources(liveSources)}` : 'samples'} />
               <Stat label="Top topic" value={<span className="text-[20px]">{pulse.topics[0]?.label ?? '–'}</span>} sub={pulse.topics[0] ? `${pulse.topics[0].share}% of posts` : undefined} />
             </div>
           </Card>
@@ -142,7 +178,8 @@ export default function Community() {
             <Why>
               <p>Each post is tagged with topics by the app’s word rules, not by AI. A post can have more than one topic, so the percentages add up to more than 100.</p>
               <p>▲ / ▼ compares posts in the last 30 days with the 30 days before.</p>
-              <p>These are counts of the posts collected here, not of all of Reddit. How much people talk about a problem is not a measure of how many people have it.</p>
+              <p>These are counts of the posts collected here (Reddit posts, YouTube videos and UK news articles), not of everything online. How much people talk about a problem is not a measure of how many people have it.</p>
+              <p>News articles show what’s being reported, not what people say. Videos and articles are tagged by the same word rules as posts.</p>
             </Why>
           </Card>
 
@@ -162,7 +199,7 @@ export default function Community() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <Muted>Posts per month. {live ? 'Reddit search returns the most relevant posts from the last year, so months are not evenly covered.' : 'Sample data.'}</Muted>
+            <Muted>Posts per month. {live ? 'Reddit and YouTube searches return the most relevant posts from the last year, and news covers only the last month, so months are not evenly covered.' : 'Sample data.'}</Muted>
           </Card>
 
           {active && (
@@ -187,8 +224,9 @@ export default function Community() {
                 <Card key={p.id}>
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-mut">
                     <span>
+                      {sourceOf(p) === 'news' && live && 'News · '}
                       {p.community}
-                      {p.author && (
+                      {p.author && sourceOf(p) === 'reddit' && (
                         <>
                           {' · '}
                           <a className="font-medium text-ink hover:underline" href={`https://www.reddit.com/user/${encodeURIComponent(p.author)}`} target="_blank" rel="noreferrer">
@@ -196,14 +234,16 @@ export default function Community() {
                           </a>
                         </>
                       )}
+                      {p.author && sourceOf(p) === 'youtube' && <span className="font-medium text-ink"> · {p.author}</span>}
                       {' · '}
                       <time dateTime={p.postedAt ?? p.date}>{postedLabel(p)}</time>
                     </span>
                     {(p.score !== null || p.comments !== null) && (
                       <span className="num">
-                        {p.score !== null && `▲ ${p.score}`}
+                        {p.score !== null && (sourceOf(p) === 'youtube' ? `${p.score.toLocaleString('en-GB')} ${p.score === 1 ? 'like' : 'likes'}` : `▲ ${p.score}`)}
                         {p.score !== null && p.comments !== null && ' · '}
-                        {p.comments !== null && `${p.comments} replies`}
+                        {p.comments !== null &&
+                          `${p.comments.toLocaleString('en-GB')} ${sourceOf(p) === 'youtube' ? (p.comments === 1 ? 'comment' : 'comments') : p.comments === 1 ? 'reply' : 'replies'}`}
                       </span>
                     )}
                   </div>
@@ -218,12 +258,12 @@ export default function Community() {
                   {p.replies.map((r) => (
                     <div key={r.text} className="mt-2 rounded-2xl bg-card-2 p-3 text-sm">
                       <p>{r.text}</p>
-                      {r.author && <div className="mt-0.5 text-xs text-mut">u/{r.author}</div>}
+                      {r.author && <div className="mt-0.5 text-xs text-mut">{sourceOf(p) === 'reddit' ? `u/${r.author}` : r.author}</div>}
                     </div>
                   ))}
                   {p.url && (
                     <a className="mt-2 inline-block text-sm font-medium text-link underline" href={p.url} target="_blank" rel="noreferrer">
-                      Read on Reddit
+                      {READ_ON[sourceOf(p)]}
                     </a>
                   )}
                 </Card>
@@ -235,7 +275,7 @@ export default function Community() {
       )}
 
       <Muted className="px-1">
-        Posts are people’s own experiences, not financial advice. Usernames are shown as they appear publicly on Reddit; emails, phone numbers and postcodes in posts are hidden. For debt problems, free regulated advisers such as StepChange,
+        Posts are people’s own experiences, not financial advice. Usernames and channel names are shown as they appear publicly on Reddit and YouTube; emails, phone numbers and postcodes in posts are hidden. For debt problems, free regulated advisers such as StepChange,
         National Debtline or Citizens Advice can help.
       </Muted>
     </div>

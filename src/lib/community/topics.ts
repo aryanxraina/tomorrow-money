@@ -157,6 +157,8 @@ export interface PulsePost {
   topics: string[];
   /** Up to 3 top replies, cleaned. */
   replies: PulseReply[];
+  /** Where the post came from. Missing means Reddit (or a sample). */
+  source?: 'reddit' | 'youtube' | 'news';
 }
 
 export interface PulseReply {
