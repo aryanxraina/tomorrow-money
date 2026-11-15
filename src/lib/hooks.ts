@@ -121,6 +121,8 @@ export interface AiStatus {
   localUrl: string;
   localModel: string;
   localUp: boolean;
+  /** How Community Pulse reads Reddit: official API, public feeds, or off. */
+  reddit: 'api' | 'rss' | null;
 }
 
 export function useAiStatus() {

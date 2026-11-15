@@ -42,7 +42,27 @@ Other OpenAI-compatible servers such as Ollama work for text, but receipt OCR ne
 
 - `GOOGLE_MAPS_API_KEY`: Places API (New) Nearby Search for the Pay screen ("Use my real location"). Needs a Google Cloud billing account; Nearby Search has a monthly free allowance. Without it, sample places are laid out around you.
 - `FINNHUB_API_KEY`: live share prices on the Invest screen (free tier). Without it, sample prices.
+- `REDDIT_SUBREDDITS`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`: Community Pulse reads Reddit's public feeds with no key; API keys are optional (see below).
 - `NEXT_PUBLIC_TODAY`: the demo is pinned to 2026-11-07 so forecasts are reproducible. Remove it to use the real date with your own data.
+
+## Community Pulse (Reddit)
+
+More → **Community Pulse** shows which money problems people are talking about on Reddit (rent, energy, food, debt, unexpected costs, benefits, job loss, tax, bank fees), how that changes month by month, real posts (username, title, text, posting time, link) with their top replies, and free official help for each topic. Topics you're most likely to face are marked **For you**, based on your own analysis.
+
+**Works with no setup.** It reads Reddit's public RSS feeds (`/r/<sub>/search.rss`, `/r/<sub>/comments/<id>/.rss`), which Reddit publishes for programs to read. Reddit allows only a few anonymous requests a minute, so:
+
+- Collection runs **in the background** and follows Reddit's rate-limit headers. The first run takes a few minutes; the page shows progress and fills in as posts arrive.
+- Results are saved to `.cache/reddit-pulse.json` and refreshed every 6 hours (1 hour with the API). They still show offline and in On-device mode, which never contacts Reddit.
+
+Optional, faster, adds upvotes and reply counts: once Reddit approves your Data API access (see https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy), create a **script** app at https://www.reddit.com/prefs/apps and set `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` in `.env.local`.
+
+Settings in `.env.local`: `REDDIT_SUBREDDITS` (default `UKPersonalFinance,UKFrugal`), `REDDIT_USERNAME` (added to the user agent), `REDDIT_DISABLED=1` to turn it off.
+
+No browser automation: Reddit blocks automated browsers, and its terms don't allow disguising one.
+
+How it works (`src/lib/community/`): one search per topic → drop megathreads, adult and removed posts → tag topics with word rules (code, no AI) → hide emails, phone numbers and postcodes in text → top replies for the biggest topics → counts by topic and month. Only fixed topic searches are sent to Reddit, never anything about the user.
+
+Honesty: these are counts of the posts collected, not of all of Reddit, and how much people discuss a problem is not a measure of how many people have it.
 
 ## What's in it
 
@@ -58,6 +78,7 @@ Other OpenAI-compatible servers such as Ollama work for text, but receipt OCR ne
 | Pay | Location | At checkout: finds the shop you're in and a cheaper one nearby, after counting walking time / bus fare. Fuel too. Help nearby (free cash machine, advice, food bank) |
 | Ask | Context-based agent | Knows forecast, bills, plan. "Can I afford £60?" runs the purchase through the forecast and finds a safer date |
 | More → Subscriptions | Email scan | Finds renewals, free trials and price rises in emails (demo inbox), adds them to the forecast |
+| More → Community Pulse | Inclusion, trends | Money problems people discuss on Reddit, monthly trends, real experiences, official help per topic |
 | More → Invest | Long-term resilience | Readiness check (buffer, no high-cost debt), investing simulator, plain-English ISA/pension, share prices |
 
 Accessibility: 4 languages (English, Polski, हिन्दी, اردو with right-to-left), bigger text (Aa), plain words, "Why am I seeing this?" on every insight, AI badges on every AI sentence.

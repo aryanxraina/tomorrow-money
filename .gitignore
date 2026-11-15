@@ -13,6 +13,9 @@
 !.yarn/releases
 !.yarn/versions
 
+# saved Reddit results (Community Pulse)
+/.cache
+
 # testing
 /coverage
 
