@@ -163,6 +163,243 @@ label {
   display: none;
 }
 
+/* ---------------------------------------------------------------------------------------------
+   Motion and wide screens. Phones keep the same layout; they only get the entrance animation.
+   Wide screens (1024px+: iPad landscape, laptops, desktops) get a top bar and use the width.
+   Everything here is presentation only, and the reduced-motion rule below turns movement off.
+   --------------------------------------------------------------------------------------------- */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes nav-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sheen {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(-5deg);
+  }
+}
+
+/* Lime reads as olive on the dark background, so its wash is lighter there. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --wash-lime: 9%;
+  }
+}
+:root[data-theme="dark"] {
+  --wash-lime: 9%;
+}
+
+/* Each screen's blocks rise into place one after another. `backwards` means no transform is
+   left behind once the animation ends, so sticky and fixed elements keep working. */
+.page > * > *,
+.page > * > .space-y-3:not(.ui-card) > * {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+.page > * > :nth-child(2) { animation-delay: 45ms; }
+.page > * > :nth-child(3) { animation-delay: 90ms; }
+.page > * > :nth-child(4) { animation-delay: 135ms; }
+.page > * > :nth-child(5) { animation-delay: 180ms; }
+.page > * > :nth-child(6) { animation-delay: 225ms; }
+.page > * > :nth-child(7) { animation-delay: 270ms; }
+.page > * > :nth-child(n + 8) { animation-delay: 300ms; }
+
+/* The deep green, softly shifting towards lime: the same colours the app already uses. */
+.hero-gradient {
+  background-color: var(--hero);
+  background-image: linear-gradient(120deg, var(--hero) 0%, color-mix(in srgb, var(--hero) 80%, var(--lime) 20%) 50%, var(--hero) 100%);
+  background-size: 220% 220%;
+  animation: sheen 16s ease-in-out infinite alternate;
+}
+
+.ui-card,
+.lime-card {
+  transition:
+    transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow 0.3s ease;
+}
+
+@media (min-width: 1024px) {
+  /* A soft wash of the app's own green and lime behind everything. */
+  body {
+    background:
+      radial-gradient(900px 520px at 0% -8%, color-mix(in srgb, var(--lime) var(--wash-lime, 24%), transparent), transparent 70%),
+      radial-gradient(820px 620px at 100% 0%, color-mix(in srgb, var(--hero) 16%, transparent), transparent 72%),
+      radial-gradient(900px 700px at 60% 110%, color-mix(in srgb, var(--strip-good) 10%, transparent), transparent 70%),
+      var(--pg);
+    background-attachment: fixed;
+  }
+  .app-bg {
+    background: transparent;
+  }
+
+  /* Top bar */
+  .desk-nav > div {
+    animation: nav-drop 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) backwards, sheen 16s ease-in-out infinite alternate;
+    backdrop-filter: saturate(140%) blur(8px);
+  }
+  .nav-pill {
+    transition: transform 0.5s cubic-bezier(0.34, 1.4, 0.5, 1);
+    box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--lime) 70%, transparent);
+  }
+  .nav-link {
+    transition: color 0.2s ease, background-color 0.2s ease;
+  }
+  .nav-link svg {
+    flex: none; /* icons never shrink when the bar is tight */
+  }
+  .nav-gear {
+    transition: transform 0.5s cubic-bezier(0.34, 1.4, 0.5, 1);
+  }
+  .nav-link:hover .nav-gear {
+    transform: rotate(75deg);
+  }
+  .logo-float {
+    display: inline-flex;
+    animation: float 5s ease-in-out infinite;
+  }
+
+  /* The settings link in each page heading is in the top bar here. */
+  .page a[aria-label="Settings and more"] {
+    display: none;
+  }
+  .page h1.truncate {
+    font-size: 34px;
+  }
+
+  /* Hero blocks get the same moving gradient as the top bar. */
+  .page .hero-card {
+    background-image: linear-gradient(125deg, var(--hero) 0%, color-mix(in srgb, var(--hero) 78%, var(--lime) 22%) 55%, var(--hero) 100%);
+    background-size: 220% 220%;
+    animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) backwards, sheen 18s ease-in-out infinite alternate;
+    box-shadow: 0 24px 50px -30px color-mix(in srgb, var(--hero) 85%, transparent);
+  }
+
+  /* Two columns of cards. Reading order is unchanged: down the first column, then the second. */
+  .page[data-layout="columns"] > div {
+    columns: 2;
+    column-gap: 20px;
+  }
+  .page[data-layout="columns"] > div > *,
+  .page[data-layout="columns"] > div > .space-y-3:not(.ui-card) > * {
+    break-inside: avoid;
+    margin: 0 0 18px;
+  }
+  /* A plain wrapper of cards (not a card itself) lets its cards join the columns. */
+  .page[data-layout="columns"] > div > .space-y-3:not(.ui-card) {
+    display: contents;
+  }
+  /* The page heading, and view switches, run across both columns. */
+  .page[data-layout="columns"] > div > :first-child {
+    column-span: all;
+    margin-bottom: 14px;
+  }
+  .page[data-layout="columns"] > div > [role="group"] {
+    column-span: all;
+    max-width: 460px;
+  }
+
+  /* Ask: no bottom bar here, so the message box sits near the bottom edge. */
+  .page[data-layout="wide"] .sticky.bottom-\[92px\] {
+    bottom: 24px;
+  }
+}
+
+@media (hover: hover) and (min-width: 1024px) {
+  .ui-card:hover {
+    box-shadow: 0 20px 44px -30px color-mix(in srgb, var(--hero) 60%, transparent);
+  }
+  a:hover > .ui-card,
+  a:hover > .lime-card {
+    transform: translateY(-3px);
+  }
+  a:hover > .lime-card {
+    box-shadow: 0 16px 34px -18px color-mix(in srgb, var(--lime) 85%, transparent);
+  }
+  .page a.block > div:not(.ui-card):not(.lime-card) {
+    transition: transform 0.25s ease;
+  }
+  .page a.block:hover > div:not(.ui-card):not(.lime-card) {
+    transform: translateX(3px);
+  }
+}
+
+/* Tablets. Their screens are much taller (or wider) than a laptop's, so the same layouts are drawn
+   larger to fill them instead of leaving empty space. Laptops, desktops and phones are unchanged:
+   the portrait rules need a portrait screen, and the landscape rule needs a touch screen. */
+@media (min-width: 768px) and (max-width: 999px) and (orientation: portrait) {
+  /* iPad, iPad Air, iPad Pro 11" upright: use the full width, a little larger. */
+  main {
+    max-width: none;
+    zoom: 1.12;
+  }
+  nav.fixed > div {
+    max-width: none;
+  }
+}
+@media (min-width: 1000px) and (orientation: portrait) {
+  /* iPad Pro 12.9"/13" upright: tall enough for one full-width column, slightly larger. */
+  main,
+  .desk-nav {
+    zoom: 1.15;
+  }
+  .page[data-layout="columns"] > div {
+    columns: 1;
+  }
+  /* The top bar is narrower here, so its tabs sit closer together. */
+  .desk-nav > div {
+    gap: 12px;
+  }
+  .desk-nav .nav-link {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+}
+@media (min-width: 1280px) and (min-height: 950px) and (pointer: coarse) {
+  /* iPad Pro 12.9"/13" sideways. */
+  main,
+  .desk-nav {
+    zoom: 1.15;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Looping gradients would flicker at near-zero duration, so they stop instead. */
+  .hero-gradient,
+  .desk-nav > div,
+  .page .hero-card,
+  .logo-float {
+    animation: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;

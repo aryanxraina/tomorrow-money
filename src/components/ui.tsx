@@ -8,17 +8,17 @@ export const inputCls =
   'w-full rounded-2xl border border-transparent bg-card-2 px-4 py-3 text-base text-ink outline-none placeholder:text-mut focus:border-[var(--link)]';
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-[26px] bg-card p-4 ${className}`}>{children}</div>;
+  return <div className={`ui-card rounded-[26px] bg-card p-4 ${className}`}>{children}</div>;
 }
 
 /** Deep green block for the most important thing on a screen. */
 export function HeroCard({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-[28px] bg-hero p-[18px] text-hero-ink ${className}`}>{children}</div>;
+  return <div className={`hero-card rounded-[28px] bg-hero p-[18px] text-hero-ink ${className}`}>{children}</div>;
 }
 
 /** The app's one attention colour, used at most once on a screen: the best next thing to do. */
 export function LimeCard({ children, href }: { children: ReactNode; href?: string }) {
-  const body = <div className="flex items-center gap-3 rounded-[26px] bg-lime px-4 py-[15px] text-lime-ink">{children}</div>;
+  const body = <div className="lime-card flex items-center gap-3 rounded-[26px] bg-lime px-4 py-[15px] text-lime-ink">{children}</div>;
   return href ? (
     <Link href={href} className="block">
       {body}
