@@ -1,6 +1,7 @@
 'use client';
 
-import { CircleCheckBig, LifeBuoy, ShieldCheck, TrendingUp } from 'lucide-react';
+import { CircleCheckBig, LifeBuoy, MessagesSquare, ShieldCheck, TrendingUp } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Logo } from '@/components/Logo';
@@ -32,8 +33,9 @@ export default function Landing() {
       </div>
 
       <HeroCard className="!p-6">
-        <h1 className="text-balance font-display text-[42px] font-semibold leading-[1.04] tracking-tight">See money problems coming.</h1>
-        <p className="mt-3 text-[16px] leading-relaxed text-hero-mut">Tomorrow forecasts your next 90 days, day by day, finds help you may be missing, and gives you a short plan.</p>
+        <p className="text-[13px] font-semibold uppercase tracking-wide text-lime">Welcome to Tomorrow</p>
+        <h1 className="mt-2 text-balance font-display text-[40px] font-semibold leading-[1.04] tracking-tight">Let’s make understanding your money easier.</h1>
+        <p className="mt-3 text-[16px] leading-relaxed text-hero-mut">See how long your money could last, what’s coming up, help you may be missing, and simple things you can do next.</p>
         <div className="mt-5" aria-hidden>
           <div className="grid h-3.5 gap-px" style={{ gridTemplateColumns: 'repeat(90, 1fr)' }}>
             {EXAMPLE_STRIP.map((colour, i) => (
@@ -49,12 +51,19 @@ export default function Landing() {
           Get started
         </ButtonLink>
         <p className="mt-2.5 text-center text-[13px] text-hero-mut">Free. About 2 minutes. No bank login needed.</p>
+        <p className="mt-1 text-center text-[13px] text-hero-mut">
+          Used Tomorrow before?{' '}
+          <Link href="/onboarding" className="font-semibold text-lime underline underline-offset-2">
+            Sign in to carry on
+          </Link>
+        </p>
       </HeroCard>
 
       <Card className="!py-2">
-        <Row icon={<TrendingUp size={20} aria-hidden />} title="Know what’s coming" sub="Your balance and bills, day by day" />
+        <Row icon={<TrendingUp size={20} aria-hidden />} title="Know what’s coming" sub="Your money and bills over the next 90 days" />
         <Row icon={<LifeBuoy size={20} aria-hidden />} title="Find help you may be missing" sub="With links to the official checks" />
-        <Row icon={<CircleCheckBig size={20} aria-hidden />} title="Get a short plan" sub="See how each step changes your forecast" />
+        <Row icon={<CircleCheckBig size={20} aria-hidden />} title="Know what to do next" sub="Three simple steps, explained" />
+        <Row icon={<MessagesSquare size={20} aria-hidden />} title="Hear from people like you" sub="Real conversations about money" />
         <Row icon={<ShieldCheck size={20} aria-hidden />} title="Private by default" sub="Your data stays on this device" />
       </Card>
 

@@ -9,6 +9,7 @@ const shots = process.argv[3];
 if (shots) mkdirSync(shots, { recursive: true });
 const { today, seeds } = JSON.parse(readFileSync('.audit/seeds.json', 'utf8'));
 const STORE = 'tomorrow-v2';
+const TEST_USER = { sub: 'smoke-test', email: 'test@example.com', name: 'Test Person', given: 'Sam', picture: null };
 const PAGES = ['/home', '/spending', '/forecast', '/help', '/plan', '/ask', '/snap', '/more', '/details', '/subscriptions', '/learn', '/nearby'];
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const problems = [];
@@ -28,6 +29,9 @@ async function open(name, { state, colorScheme = 'light' } = {}) {
     note('external request', r.url());
   });
   await page.goto(`${base}/nearby`);
+  // Starting needs a Google sign-in when accounts are set up. Tests use a made-up signed-in person with no
+  // Google token, so nothing is ever sent to Google; changes simply stay on the device.
+  await page.evaluate((u) => localStorage.setItem('tomorrow-account', JSON.stringify({ state: { user: u, lastSync: null, dirty: false }, version: 0 })), TEST_USER);
   if (state) await page.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify({ state: s, version: 0 })), [STORE, state]);
   const check = async (path) => {
     where = path;

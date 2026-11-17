@@ -1,24 +1,41 @@
 'use client';
 
-import { CalendarPlus } from 'lucide-react';
+import { BellRing, CalendarPlus, ChevronDown, CircleCheck, TriangleAlert } from 'lucide-react';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { ForecastChart, RiskLegend, RiskStrip } from '@/components/charts';
-import { Button, ButtonLink, Card, Muted, NoProfile, Row, SectionTitle, Stat, Summary, TopBar, Why } from '@/components/ui';
+import { Button, ButtonLink, Card, Explain, Money, Muted, NoProfile, Row, SectionTitle, SourceTag, Stat, Summary, TopBar, Why } from '@/components/ui';
 import { safeDays, whatIf } from '@/lib/engine/analyse';
 import { addDays, gbp, niceDate, shortDate } from '@/lib/engine/dates';
 import { useMoney } from '@/lib/hooks';
 import { billsToIcs, downloadFile } from '@/lib/ics';
-import { t } from '@/lib/i18n';
 import { missingBasics } from '@/lib/narrative';
 import { useNarration } from '@/lib/use-narration';
 
 const riskyDays = (fc: { days: { pBelow0: number }[] }) => fc.days.filter((d) => d.pBelow0 >= 0.25).length;
 
+/** The most likely balance a number of days from now, with the likely range around it. */
+function Ahead({ label, day }: { label: string; day: { p10: number; p50: number; p90: number } | undefined }) {
+  if (!day) return null;
+  return (
+    <div className="ahead-tile min-w-0 rounded-2xl bg-card-2 p-3">
+      <div className="text-[12.5px] font-medium text-mut">{label}</div>
+      <div className={`num mt-0.5 font-display text-[22px] font-semibold leading-tight tracking-tight ${day.p50 < 0 ? 'text-risk' : ''}`}>
+        <Money value={day.p50} dp={0} />
+      </div>
+      <div className="num text-[11.5px] text-mut">
+        likely {gbp(day.p10)} to {gbp(day.p90)}
+      </div>
+    </div>
+  );
+}
+
 export default function Forecast() {
   const money = useMoney();
   const predict = useNarration(money?.facts ?? null, money?.rulesText ?? null, 'predict');
   const [shock, setShock] = useState<{ label: string; daily?: number; extra?: number } | null>(null);
+  const [showGraph, setShowGraph] = useState(false);
   const an = money?.an;
   const shocked = useMemo(() => {
     if (!an || !shock) return null;
@@ -33,6 +50,7 @@ export default function Forecast() {
   const later = safeDays(an, f, savings);
   const withPlan = safeDays(an, plan, savings);
   const coming = an.upcoming.filter((u) => u.amount > 0 || u.amount <= -30);
+  const dayAt = (n: number) => f.days[Math.min(n, f.days.length - 1)];
   const shocks = [
     { label: 'A £400 surprise bill next week', extra: 400 },
     { label: 'Income drops by 20%', daily: (-0.2 * an.summary.monthlyIn) / 30.4 },
@@ -41,7 +59,7 @@ export default function Forecast() {
 
   return (
     <div className="space-y-3">
-      <TopBar title="Forecast" />
+      <TopBar title="Future" subtitle="What might happen next with your money." />
       <Summary text={predict.text} used={predict.used} writing={predict.writing} />
 
       {!an.gaps.canJudge && (
@@ -59,10 +77,48 @@ export default function Forecast() {
       {an.gaps.canJudge && (
         <>
           <Card>
-            <SectionTitle>Your next 90 days</SectionTitle>
-            <div className="mt-2">
-              <ForecastChart base={shocked || f} plan={plan} height={240} />
+            <SectionTitle action={profile.estimated ? <SourceTag kind="estimate" /> : null}>Your balance ahead</SectionTitle>
+            <div className="mt-2.5 grid grid-cols-3 gap-2">
+              <Ahead label="In 7 days" day={dayAt(7)} />
+              <Ahead label="In 30 days" day={dayAt(30)} />
+              <Ahead label="In 90 days" day={dayAt(89)} />
             </div>
+            <div className={`mt-3 flex items-start gap-2.5 rounded-2xl p-3 ${f.firstRisk ? 'chip-risk' : f.maxRisk.p >= 0.1 ? 'chip-warn' : 'chip-good'}`}>
+              {f.firstRisk || f.maxRisk.p >= 0.1 ? <TriangleAlert size={18} className="mt-0.5 flex-none" aria-hidden /> : <CircleCheck size={18} className="mt-0.5 flex-none" aria-hidden />}
+              <p className="text-sm font-medium">
+                {f.firstRisk
+                  ? `You might run short around ${niceDate(f.firstRisk.date)}${f.firstRisk.trigger ? `, when ${f.firstRisk.trigger.label} is due` : ''}.`
+                  : f.maxRisk.p >= 0.1
+                    ? `Money could get tight around ${niceDate(f.maxRisk.date)}. It’s not likely, but worth watching.`
+                    : 'No day in the next 90 looks likely to go below £0.'}
+              </p>
+            </div>
+            <Explain
+              label="What do these numbers mean?"
+              means="Your most likely balance on each of those days, with the range it will probably fall in. They’re predictions, not promises."
+              from={profile.estimated ? 'Your answers, so it’s an estimate. A bank statement makes it much more accurate.' : 'Your balance, your regular bills and income, and your usual everyday spending from your statement.'}
+              todo="If a date looks tight, the Actions tab shows steps that help, and Support shows help you may be missing."
+            />
+          </Card>
+
+          <Card>
+            <SectionTitle
+              action={
+                <button type="button" className="flex items-center gap-1 text-sm font-semibold text-link" aria-expanded={showGraph} onClick={() => setShowGraph(!showGraph)}>
+                  {showGraph ? 'Hide graph' : 'Show graph'}
+                  <ChevronDown size={16} className={`transition-transform ${showGraph ? 'rotate-180' : ''}`} aria-hidden />
+                </button>
+              }
+            >
+              Your next 90 days
+            </SectionTitle>
+            {!showGraph && <Muted className="mt-0.5">Each bar is a day: green looks fine, amber is tight, red could go below £0.</Muted>}
+            {showGraph && (
+              <div className="graph-open mt-2">
+                <ForecastChart base={shocked || f} plan={plan} height={240} />
+              </div>
+            )}
+            {showGraph && (
             <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-mut">
               <span className="inline-flex items-center gap-1.5">
                 <i className="block h-[3px] w-4 rounded-full" style={{ background: 'var(--chart-line)' }} /> Most likely
@@ -71,9 +127,10 @@ export default function Forecast() {
                 <i className="block h-2.5 w-4 rounded-[2px]" style={{ background: 'var(--chart-band)' }} /> Likely range
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <i className="block w-4 border-t-2 border-dashed" style={{ borderColor: 'var(--chart-plan)' }} /> With your plan
+                <i className="block w-4 border-t-2 border-dashed" style={{ borderColor: 'var(--chart-plan)' }} /> With your actions
               </span>
             </div>
+            )}
             <div className="mt-4">
               <RiskStrip forecast={shocked || f} />
               <div className="mt-2">
@@ -90,34 +147,47 @@ export default function Forecast() {
 
           <Card>
             <SectionTitle>What if…</SectionTitle>
+            <Muted className="mt-0.5">See how a change would affect your next 90 days.</Muted>
             <div className="mt-2 flex flex-wrap gap-2">
               {shocks.map((s) => (
-                <Button key={s.label} variant={shock?.label === s.label ? 'primary' : 'soft'} className="!px-3.5 !py-2 !text-sm" onClick={() => setShock(shock?.label === s.label ? null : s)}>
+                <Button
+                  key={s.label}
+                  variant={shock?.label === s.label ? 'primary' : 'soft'}
+                  className="!px-3.5 !py-2 !text-sm"
+                  onClick={() => {
+                    setShock(shock?.label === s.label ? null : s);
+                    setShowGraph(true);
+                  }}
+                >
                   {s.label}
                 </Button>
               ))}
             </div>
             {shocked && (
               <p className="mt-3 text-sm">
-                Risky days go from {riskyDays(f)} to <b className="font-semibold text-risk">{riskyDays(shocked)}</b>, and your lowest likely balance goes from {gbp(f.lowestP50.value)} to <b className="font-semibold text-risk">{gbp(shocked.lowestP50.value)}</b>. The chart above shows this. Tap again to clear it.
+                Risky days go from {riskyDays(f)} to <b className="font-semibold text-risk">{riskyDays(shocked)}</b>, and your lowest likely balance goes from {gbp(f.lowestP50.value)} to <b className="font-semibold text-risk">{gbp(shocked.lowestP50.value)}</b>. The graph above shows this. Tap again to clear it.
               </p>
             )}
           </Card>
 
           <Card>
-            <SectionTitle>{t('safeDays')}</SectionTitle>
+            <SectionTitle>How long your money could last</SectionTitle>
             {now !== null && later !== null && withPlan !== null ? (
               <div className="mt-2 grid grid-cols-3 gap-2">
                 <Stat label="Now" value={Math.round(now)} />
                 <Stat label="In 90 days" value={Math.round(later)} sub="if nothing changes" tone={Math.round(later) < Math.round(now) ? 'risk' : undefined} />
-                <Stat label="With your plan" value={Math.round(withPlan)} sub="in 90 days" tone="good" />
+                <Stat label="With your actions" value={Math.round(withPlan)} sub="in 90 days" tone="good" />
               </div>
             ) : (
               <Muted className="mt-1">We need your rent and what you spend on food to work these out.</Muted>
             )}
-            <Why label="What are safe days?">
-              <p>{t('safeDaysHint')}. It’s your balance plus savings, divided by what your essentials cost each day. They count your money only, not income that may arrive.</p>
-            </Why>
+            <Muted className="mt-1">Days your money could cover essentials if no more came in.</Muted>
+            <Explain
+              label="How is this worked out?"
+              means="How many days your money could pay for essentials like rent, bills and food if your income stopped."
+              from="Your balance plus savings, divided by what your essentials cost each day. It counts your money only, not income that may arrive."
+              todo="Ticking steps on the Actions tab shows how much longer it could last."
+            />
           </Card>
         </>
       )}
@@ -136,7 +206,7 @@ export default function Forecast() {
             )
           }
         >
-          Coming up
+          Upcoming payments
         </SectionTitle>
         <div className="mt-1 divide-y divide-hair">
           {coming.slice(0, 14).map((u, i) => (
@@ -144,6 +214,11 @@ export default function Forecast() {
           ))}
           {!coming.length && <Muted className="py-3">No bills or income spotted yet.</Muted>}
         </div>
+        {coming.length > 0 && (
+          <Link href="/reminders" className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-link">
+            <BellRing size={16} aria-hidden /> Get reminders in Google Calendar
+          </Link>
+        )}
       </Card>
 
       {an.tax && (

@@ -138,7 +138,7 @@ function NearbySearch() {
 export default function Nearby() {
   return (
     <div className="space-y-3">
-      <TopBar title="Nearby" back="/more" />
+      <TopBar title="Nearby help" back="/home" subtitle="Free cash, Post Offices and food banks near you." />
       <NearbySearch />
       <Card>
         <SectionTitle>Find help near you</SectionTitle>

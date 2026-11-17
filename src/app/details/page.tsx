@@ -51,7 +51,7 @@ export default function Details() {
 
   return (
     <div className="space-y-3">
-      <TopBar title="Your details" back="/more" />
+      <TopBar title="Your details" back="/more" subtitle="Everything you’ve told us. Change anything at any time." />
       <Muted className="px-1">
         You’ve answered {answered} of {total}. The more we know, the more accurate your forecast and help checks are. Tap any of these to change it.
       </Muted>

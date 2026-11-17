@@ -1,8 +1,11 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, CircleHelp, Settings } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CircleHelp, LayoutGrid, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { ProfileMenu } from '@/components/ProfileMenu';
+import { useAccount } from '@/lib/account';
+import { googleConfigured } from '@/lib/google/client';
 
 export const inputCls =
   'w-full rounded-2xl border border-transparent bg-card-2 px-4 py-3 text-base text-ink outline-none placeholder:text-mut focus:border-[var(--link)]';
@@ -265,24 +268,78 @@ export function Chips<T extends string>({ options, value, onChange }: { options:
   );
 }
 
-/** Page heading with the way back and the way to settings. */
-export function TopBar({ title, back, settings = true }: { title: string; back?: string; settings?: boolean }) {
+/** Page heading with the way back and the way to settings. `subtitle` says in plain words what the page is for. */
+/**
+ * Page heading with the way back, a quick way to Ask, and the way to more tools and settings.
+ * `subtitle` says in plain words what the page is for.
+ */
+export function TopBar({ title, back, settings = true, ask = true, subtitle }: { title: string; back?: string; settings?: boolean; ask?: boolean; subtitle?: string }) {
+  // Signed in: the profile picture opens a menu that also leads to More tools, so it replaces that icon.
+  const signedIn = useAccount((s) => !!s.user) && googleConfigured();
   return (
-    <div className="flex items-center justify-between gap-2 px-1 pb-1 pt-1">
-      <div className="flex min-w-0 items-center gap-1">
-        {back && (
-          <Link href={back} aria-label="Back" className="-ml-2 grid h-9 w-9 flex-none place-items-center rounded-full text-ink">
-            <ChevronLeft size={24} aria-hidden />
-          </Link>
-        )}
-        <h1 className="truncate font-display text-[26px] font-semibold tracking-tight">{title}</h1>
+    <div className="px-1 pb-1 pt-1">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-start gap-1">
+          {back && (
+            <Link href={back} aria-label="Back" className="-ml-2 mt-0.5 grid h-9 w-9 flex-none place-items-center rounded-full text-ink">
+              <ChevronLeft size={24} aria-hidden />
+            </Link>
+          )}
+          <h1 className="page-title min-w-0 text-balance break-words font-display text-[26px] font-semibold leading-tight tracking-tight">{title}</h1>
+        </div>
+        <div className="flex flex-none items-center gap-1.5">
+          {ask && (
+            <Link href="/ask" className="ask-link inline-flex items-center gap-1.5 rounded-full bg-lime px-3.5 py-2 text-[13.5px] font-semibold text-lime-ink shadow-[0_4px_14px_-10px_rgba(0,0,0,.4)]">
+              <MessageCircle size={17} aria-hidden />
+              Ask
+            </Link>
+          )}
+          {settings && !signedIn && (
+            <Link href="/more" aria-label="More tools and settings" className="explore-link grid h-9 w-9 place-items-center rounded-full bg-card text-ink shadow-[0_4px_14px_-10px_rgba(0,0,0,.4)]">
+              <LayoutGrid size={18} aria-hidden />
+            </Link>
+          )}
+          {signedIn && <ProfileMenu className="profile-in-page" />}
+        </div>
       </div>
-      {settings && (
-        <Link href="/more" aria-label="Settings and more" className="grid h-9 w-9 flex-none place-items-center rounded-full text-ink">
-          <Settings size={22} aria-hidden />
-        </Link>
-      )}
+      {subtitle && <p className="mt-0.5 text-[15px] text-mut">{subtitle}</p>}
     </div>
+  );
+}
+
+const SOURCE = {
+  entered: { label: 'You entered this', tone: 'plain' },
+  statement: { label: 'From your statement', tone: 'good' },
+  estimate: { label: 'Estimate', tone: 'warn' },
+  unknown: { label: 'We need more information', tone: 'plain' },
+} as const;
+
+/** Says where a number comes from, so an estimate never looks like a confirmed bank figure. */
+export function SourceTag({ kind, onDark = false }: { kind: keyof typeof SOURCE; onDark?: boolean }) {
+  const s = SOURCE[kind];
+  if (onDark) return <span className="inline-flex items-center rounded-full bg-hero-soft px-2.5 py-[3px] text-xs font-semibold text-hero-ink">{s.label}</span>;
+  return <Chip tone={s.tone}>{s.label}</Chip>;
+}
+
+/** The three things every important number should answer: what it means, where it comes from, and what to do. */
+export function Explain({ means, from, todo, label = 'What does this mean?' }: { means: ReactNode; from: ReactNode; todo?: ReactNode; label?: string }) {
+  return (
+    <Why label={label}>
+      <p>
+        <b className="font-semibold text-ink">What it means. </b>
+        {means}
+      </p>
+      <p>
+        <b className="font-semibold text-ink">Where it comes from. </b>
+        {from}
+      </p>
+      {todo && (
+        <p>
+          <b className="font-semibold text-ink">What you can do. </b>
+          {todo}
+        </p>
+      )}
+    </Why>
   );
 }
 

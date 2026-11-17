@@ -74,7 +74,7 @@ function planSentence(x: Facts) {
   if (basics) return `Once we know ${basics}, we can show how these steps change your forecast.${help}`;
   const safeMoved = x.safeDaysIn90DaysWithPlan !== x.safeDaysIn90DaysWithoutPlan;
   if (x.riskyDaysWithPlan === x.riskyDaysNext90 && !safeMoved) return `These steps don’t change your forecast much on their own.${help}`;
-  const safeWords = x.safeDaysIn90DaysWithoutPlan !== null ? `, and your safe days go from ${x.safeDaysIn90DaysWithoutPlan} to ${x.safeDaysIn90DaysWithPlan}` : '';
+  const safeWords = x.safeDaysIn90DaysWithoutPlan !== null ? `, and how long your money could last goes from ${x.safeDaysIn90DaysWithoutPlan} to ${x.safeDaysIn90DaysWithPlan} days` : '';
   return `With these steps, risky days in the next 3 months go from ${x.riskyDaysNext90} to ${x.riskyDaysWithPlan}${safeWords}.${help}`;
 }
 
@@ -150,18 +150,18 @@ export function rulesAnswer(question: string, x: Facts, subscriptions: { label: 
     return x.upcomingBigBills.length ? `Coming up: ${x.upcomingBigBills.map((b) => `${b.what}, ${gbp(b.amount)} on ${b.date}`).join('; ')}.` : 'No big bills in the next couple of months, from what we can see.';
   }
   if (/help|support|benefit|claim|entitle/.test(q)) {
-    return x.supportTop.length ? `You may be able to get: ${x.supportTop.join(', ')}. The Help tab links to the official check for each one.` : 'We didn’t find extra support for you right now.';
+    return x.supportTop.length ? `You may be able to get: ${x.supportTop.join(', ')}. The Support tab links to the official check for each one.` : 'We didn’t find extra support for you right now.';
   }
   if (/subscri|netflix|spotify|gym/.test(q)) {
     if (!subscriptions.length) return 'We haven’t spotted any regular subscriptions in your transactions yet.';
-    return `We can see ${subscriptions.length}: ${subscriptions.map((r) => `${r.label} (${gbp(r.last, 2)})`).join(', ')}. See them all under More, in Subscriptions.`;
+    return `We can see ${subscriptions.length}: ${subscriptions.map((r) => `${r.label} (${gbp(r.last, 2)})`).join(', ')}. See them all under More tools, in Regular payments.`;
   }
   if (/safe days|how long|last|buffer|sav/.test(q)) {
-    if (x.safeDaysNow === null) return 'We can’t work out your safe days until we know your balance and what your essentials cost.';
-    return `You have about ${x.safeDaysNow} safe days now: how long your money could cover essentials if income stopped. In 90 days that’s ${x.safeDaysIn90DaysWithoutPlan}, or ${x.safeDaysIn90DaysWithPlan} with your plan.`;
+    if (x.safeDaysNow === null) return 'We can’t work out how long your money could last until we know your balance and what your essentials cost.';
+    return `Your money could last about ${x.safeDaysNow} days: that’s how long it could cover essentials if income stopped. In 90 days that’s ${x.safeDaysIn90DaysWithoutPlan}, or ${x.safeDaysIn90DaysWithPlan} with your plan.`;
   }
   if (/first|start|do|plan|should/.test(q)) {
-    return x.planSteps.length ? `Start with: ${x.planSteps[0]}. The Plan tab shows every step, and how each one changes your forecast.` : 'Your plan is empty right now. Add a statement or answer a few more questions, and we’ll look again.';
+    return x.planSteps.length ? `Start with: ${x.planSteps[0]}. The Actions tab shows every step, and how each one changes your forecast.` : 'Your plan is empty right now. Add a statement or answer a few more questions, and we’ll look again.';
   }
   const basics = missingBasics(x);
   if (basics) return `I can answer that once we know ${basics}. You can add ${basics.includes(' and ') ? 'them' : 'it'} on the Home tab.`;

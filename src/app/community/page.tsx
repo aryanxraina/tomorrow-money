@@ -95,7 +95,7 @@ export default function Community() {
 
   return (
     <div className="space-y-3">
-      <TopBar title="Community Pulse" back="/more" />
+      <TopBar title="What people are saying" back="/home" subtitle="Real conversations about money, how they change over time, and where to get help." />
       <Muted className="px-1">What money problems people are talking about, how that changes over time, and where to get help.</Muted>
 
       <Card className="space-y-2">

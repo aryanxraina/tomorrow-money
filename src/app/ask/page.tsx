@@ -113,7 +113,7 @@ export default function Ask() {
 
   return (
     <div className="flex min-h-[calc(100dvh-140px)] flex-col gap-3">
-      <TopBar title="Ask" back="/home" />
+      <TopBar title="Ask Tomorrow" back="/home" ask={false} subtitle="Ask anything about your money, in your own words." />
       {!msgs.length && (
         <Card>
           <h2 className="font-display text-xl font-semibold tracking-tight">What’s on your mind?</h2>

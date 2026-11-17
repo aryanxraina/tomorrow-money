@@ -1,12 +1,16 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, FileSpreadsheet, MessageCircleQuestion } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileSpreadsheet, Home as HomeIcon, Lock, MessageCircleQuestion, PiggyBank, Sparkles, Wallet } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { SignInStep } from '@/components/Account';
 import { StatementImport } from '@/components/StatementImport';
 import { Button, Card, Chip, Chips, Field, inputCls, Muted, PoundInput } from '@/components/ui';
 import { todayISO } from '@/lib/engine/dates';
+import { useAccount } from '@/lib/account';
+import { googleConfigured } from '@/lib/google/client';
 import { useStore } from '@/lib/store';
+import { markOverviewReady } from '@/lib/welcome';
 import type { Answers, IncomeType, Nation } from '@/lib/types';
 
 const NATIONS: { id: Nation; label: string }[] = [
@@ -26,7 +30,7 @@ const INCOME: { id: IncomeType; label: string }[] = [
   { id: 'pension', label: 'Pension' },
 ];
 
-type Step = 'about' | 'start' | 'statement' | 'income' | 'balance' | 'costs';
+type Step = 'signin' | 'about' | 'start' | 'statement' | 'income' | 'balance' | 'costs';
 const QUESTION_STEPS: Step[] = ['about', 'start', 'income', 'balance', 'costs'];
 
 const amount = (s: string) => (s.trim() === '' ? null : Number(s));
@@ -34,8 +38,10 @@ const amount = (s: string) => (s.trim() === '' ? null : Number(s));
 export default function Onboarding() {
   const router = useRouter();
   const saveAnswers = useStore((s) => s.saveAnswers);
-  const [step, setStep] = useState<Step>('about');
-  const [name, setName] = useState('');
+  const user = useAccount((s) => s.user);
+  // Signing in comes first, but only when someone starts: exploring the app never asks for it.
+  const [step, setStep] = useState<Step>(() => (googleConfigured() && !useAccount.getState().user ? 'signin' : 'about'));
+  const [name, setName] = useState(() => useAccount.getState().user?.given ?? '');
   const [nation, setNation] = useState<Nation | null>(null);
   const [incomeTypes, setIncomeTypes] = useState<IncomeType[]>([]);
   const [income, setIncome] = useState('');
@@ -68,8 +74,21 @@ export default function Onboarding() {
       known.push('balance');
     }
     saveAnswers(changes, known);
+    markOverviewReady();
     router.push('/home');
   };
+
+  if (step === 'signin') {
+    return (
+      <SignInStep
+        onDone={(kind) => {
+          if (kind === 'returning') return router.push('/home');
+          setName(useAccount.getState().user?.given ?? '');
+          setStep('about');
+        }}
+      />
+    );
+  }
 
   const position = QUESTION_STEPS.indexOf(step === 'statement' ? 'start' : step);
   const back = () => setStep(step === 'statement' || step === 'income' ? 'start' : step === 'start' ? 'about' : step === 'balance' ? 'income' : 'balance');
@@ -82,16 +101,23 @@ export default function Onboarding() {
             <ChevronLeft size={24} aria-hidden />
           </button>
         )}
-        <div className="h-1.5 flex-1 rounded-full bg-card" role="progressbar" aria-label="Check-in progress" aria-valuemin={1} aria-valuemax={QUESTION_STEPS.length} aria-valuenow={position + 1}>
-          <div className="h-1.5 rounded-full transition-all" style={{ width: `${((position + 1) / QUESTION_STEPS.length) * 100}%`, background: 'var(--chart-line)' }} />
+        <div className="h-2 flex-1 rounded-full bg-card" role="progressbar" aria-label="Check-in progress" aria-valuemin={1} aria-valuemax={QUESTION_STEPS.length} aria-valuenow={position + 1}>
+          <div className="progress-fill h-2 rounded-full" style={{ width: `${((position + 1) / QUESTION_STEPS.length) * 100}%`, background: 'var(--chart-line)' }} />
         </div>
+        <span className="num flex-none text-[13px] font-medium text-mut">
+          Step {position + 1} of {QUESTION_STEPS.length}
+        </span>
       </div>
 
       {step === 'about' && (
         <>
-          <Heading title="Let’s get to know your money" sub="It takes about 2 minutes. Skip anything you’re not sure about." />
+          <Heading
+            icon={<Sparkles size={22} aria-hidden />}
+            title={user?.given ? `Hi ${user.given}! Let’s understand your money` : 'Let’s understand your money'}
+            sub="We’ll help you see where you stand and what you can do next. It takes about 2 minutes, and you can skip anything you’re not sure about."
+          />
           <Card className="space-y-4">
-            <Field label="What should we call you?" hint="Optional">
+            <Field label="What should we call you?" hint={user ? 'From your Google account. Change it to anything you like.' : 'Optional'}>
               <input className={inputCls} value={name} autoComplete="given-name" onChange={(e) => setName(e.target.value)} />
             </Field>
             <div>
@@ -126,7 +152,7 @@ export default function Onboarding() {
 
       {step === 'start' && (
         <>
-          <Heading title="How would you like to start?" sub="You can always add the other later." />
+          <Heading icon={<Wallet size={22} aria-hidden />} title="How would you like to add your information?" sub="Both work. You can always add the other later." />
           <button type="button" onClick={() => setStep('statement')} className="block w-full text-left">
             <Card className="flex items-center gap-3">
               <span className="grid h-11 w-11 flex-none place-items-center rounded-2xl bg-lime text-lime-ink">
@@ -153,19 +179,22 @@ export default function Onboarding() {
               <ChevronRight size={20} className="flex-none text-mut" aria-hidden />
             </Card>
           </button>
+          <p className="flex items-center justify-center gap-1.5 px-1 text-center text-[13px] text-mut">
+            <Lock size={14} aria-hidden /> You never have to share your bank data. Answering questions works too.
+          </p>
         </>
       )}
 
       {step === 'statement' && (
         <>
-          <Heading title="Add a bank statement" sub="Start with your main account. Three months or more gives the best forecast." />
+          <Heading icon={<FileSpreadsheet size={22} aria-hidden />} title="Add a bank statement" sub="Start with your main account. Three months or more gives the best forecast. It’s read on this device and never uploaded." />
           <StatementImport showTitle={false} onImported={() => router.push('/home')} />
         </>
       )}
 
       {step === 'income' && (
         <>
-          <Heading title="Money coming in" sub="After tax, and roughly is fine." />
+          <Heading icon={<PiggyBank size={22} aria-hidden />} title="How much money usually comes in each month?" sub="Include wages, benefits or any other regular income, after tax. A rough number is fine." why="So we can see how your money changes from month to month." />
           <Card className="space-y-4">
             <div>
               <span className="mb-1.5 block text-sm font-medium">How are you paid?</span>
@@ -183,7 +212,7 @@ export default function Onboarding() {
 
       {step === 'balance' && (
         <>
-          <Heading title="What’s in your main account today?" sub="Your forecast starts from this number." />
+          <Heading icon={<Wallet size={22} aria-hidden />} title="How much do you have right now?" sub="What’s in your main account today. An approximate amount is fine, and you can update it later." why="Your forecast starts from this number." />
           <Card className="space-y-3">
             <Field label="Balance today">
               <PoundInput value={balance} onChange={setBalance} />
@@ -201,7 +230,7 @@ export default function Onboarding() {
 
       {step === 'costs' && (
         <>
-          <Heading title="Your regular costs" sub="Leave anything blank if you’re not sure. We’ll ask again later if it matters." />
+          <Heading icon={<HomeIcon size={22} aria-hidden />} title="What do you usually pay for essentials?" sub="Leave anything blank if you’re not sure. We’ll only ask again if it matters." why="These are the costs you can’t skip, so they show how long your money could last." />
           <Card className="space-y-4">
             <Field label="Rent or mortgage a month">
               <PoundInput value={rent} onChange={setRent} />
@@ -223,11 +252,18 @@ export default function Onboarding() {
   );
 }
 
-function Heading({ title, sub }: { title: string; sub: string }) {
+function Heading({ title, sub, why, icon }: { title: string; sub: string; why?: string; icon?: React.ReactNode }) {
   return (
     <div className="px-1">
+      {icon && <span className="onboard-icon mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-lime text-lime-ink">{icon}</span>}
       <h1 className="text-balance font-display text-[28px] font-semibold leading-tight tracking-tight">{title}</h1>
       <Muted className="mt-1">{sub}</Muted>
+      {why && (
+        <p className="mt-2 text-[13px] text-mut">
+          <span className="font-semibold text-ink">Why we ask: </span>
+          {why}
+        </p>
+      )}
     </div>
   );
 }

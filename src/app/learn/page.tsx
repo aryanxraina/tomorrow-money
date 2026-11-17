@@ -1,12 +1,21 @@
 'use client';
 
-import { Check, Minus } from 'lucide-react';
+import { Check, CreditCard, GraduationCap, Minus, PiggyBank, Scale, Wallet } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SimChart } from '@/components/charts';
-import { Card, Chip, Muted, NoProfile, SectionTitle, TopBar, Why } from '@/components/ui';
+import { Card, Chip, Muted, NoProfile, Row, SectionTitle, TopBar, Why } from '@/components/ui';
 import { gbp } from '@/lib/engine/dates';
 import { investReadiness, simulateInvesting } from '@/lib/engine/invest';
 import { useMoney } from '@/lib/hooks';
+
+// Short, trusted guides from free official services, so nothing here is our own advice.
+const BASICS = [
+  { title: 'Make a budget', sub: 'See what comes in and goes out', href: 'https://www.citizensadvice.org.uk/debt-and-money/budgeting/budgeting/work-out-your-budget/', icon: Wallet },
+  { title: 'Borrowing and credit', sub: 'Loans, credit cards and your credit record', href: 'https://www.citizensadvice.org.uk/debt-and-money/borrowing-money/', icon: CreditCard },
+  { title: 'Dealing with debt', sub: 'What to do first, and free help', href: 'https://www.citizensadvice.org.uk/debt-and-money/help-with-debt/', icon: Scale },
+  { title: 'Saving on a low income', sub: 'Help to Save adds a bonus to what you save', href: 'https://www.gov.uk/get-help-savings-low-income', icon: PiggyBank },
+  { title: 'Student finance', sub: 'Loans, grants and when you pay back', href: 'https://www.gov.uk/student-finance', icon: GraduationCap },
+];
 
 // Education only: no named funds or shares and no prices, so this isn't promoting any investment.
 export default function Learn() {
@@ -26,7 +35,20 @@ export default function Learn() {
 
   return (
     <div className="space-y-3">
-      <TopBar title="Learn about investing" back="/more" />
+      <TopBar title="Learn about money" back="/home" subtitle="Simple guides, in plain English." />
+
+      <Card className="!py-2">
+        <div className="pt-1.5 font-semibold">Money basics</div>
+        <Muted className="mt-0.5">Free guides from Citizens Advice and GOV.UK. They open in a new tab.</Muted>
+        <div className="mt-1 divide-y divide-hair">
+          {BASICS.map((b) => {
+            const Icon = b.icon;
+            return <Row key={b.href} icon={<Icon size={19} aria-hidden />} title={b.title} sub={b.sub} href={b.href} external />;
+          })}
+        </div>
+      </Card>
+
+      <h2 className="px-1 pt-1 font-display text-[20px] font-semibold tracking-tight">Investing: is it for you yet?</h2>
       <Muted className="px-1">For learning only. Investing usually only makes sense once you have a safety net, and your money can go down as well as up.</Muted>
 
       <Card>

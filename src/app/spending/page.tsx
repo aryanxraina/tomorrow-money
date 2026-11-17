@@ -1,11 +1,11 @@
 'use client';
 
-import { ChevronDown, Search } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { CategoryTrendChart, ScoreBars } from '@/components/charts';
 import { StatementImport } from '@/components/StatementImport';
-import { Card, inputCls, Money, Muted, NoProfile, Row, SectionTitle, Segmented, Stat, Summary, TopBar, Why } from '@/components/ui';
+import { Card, Explain, inputCls, Money, Muted, NoProfile, Row, SectionTitle, Segmented, SourceTag, Stat, Summary, TopBar, Why } from '@/components/ui';
 import type { Analysis } from '@/lib/engine/analyse';
 import { CATEGORY_LABEL, ESSENTIAL } from '@/lib/engine/categorise';
 import { gbp, niceDate, shortDate } from '@/lib/engine/dates';
@@ -125,13 +125,14 @@ function Transactions({ an, estimated }: { an: Analysis; estimated: boolean }) {
   );
 }
 
-function Overview({ an }: { an: Analysis }) {
+function Overview({ an, estimated, onSeeAll }: { an: Analysis; estimated: boolean; onSeeAll: () => void }) {
   const money = useMoney();
   const understand = useNarration(money?.facts ?? null, money?.rulesText ?? null, 'understand');
   const detect = useNarration(money?.facts ?? null, money?.rulesText ?? null, 'detect');
   const trends = useMemo(() => categoryTrends(an.txns, an.today), [an.txns, an.today]);
   const left = an.summary.monthlyIn - an.summary.monthlyOut;
   const top = an.summary.byCategory[0]?.monthly ?? 1;
+  const recent = an.txns.filter((t) => t.source !== 'estimate').slice(-5).reverse();
 
   // With nothing to go on, a page of £0 would be a claim. The sentence says what would fill it in.
   if (!an.txns.length) return <Summary text={understand.text} used={understand.used} writing={understand.writing} />;
@@ -141,11 +142,17 @@ function Overview({ an }: { an: Analysis }) {
       <Summary text={understand.text} used={understand.used} writing={understand.writing} />
 
       <Card>
-        <div className="grid grid-cols-3 gap-2">
-          <Stat label="In a month" value={an.gaps.income ? '–' : gbp(an.summary.monthlyIn)} />
-          <Stat label="Out a month" value={gbp(an.summary.monthlyOut)} />
-          <Stat label="Left" value={an.gaps.income ? '–' : gbp(left)} tone={an.gaps.income ? undefined : left < 0 ? 'risk' : 'good'} />
+        <SectionTitle action={<SourceTag kind={estimated ? 'estimate' : 'statement'} />}>A typical month</SectionTitle>
+        <div className="mt-1 font-display text-[38px] font-semibold leading-tight tracking-tight">
+          <Money value={an.summary.monthlyOut} dp={0} />
         </div>
+        <Muted>Money going out each month, on average</Muted>
+        <div className="mt-3 grid grid-cols-3 gap-2 rounded-2xl bg-card-2 p-3">
+          <Stat label="Money in" value={an.gaps.income ? '–' : gbp(an.summary.monthlyIn)} sub={an.gaps.income ? 'Need more info' : undefined} />
+          <Stat label="Money out" value={gbp(an.summary.monthlyOut)} />
+          <Stat label="Left over" value={an.gaps.income ? '–' : gbp(left)} tone={an.gaps.income ? undefined : left < 0 ? 'risk' : 'good'} />
+        </div>
+        <h3 className="mt-4 font-semibold">Where your money goes</h3>
         {an.summary.otherMoneyIn >= 1 && <Muted className="mt-2">Plus about {gbp(an.summary.otherMoneyIn)} a month in refunds and money from other people, which we don’t count as income.</Muted>}
         <div className="mt-4 space-y-3">
           {an.summary.byCategory.slice(0, 9).map((c) => (
@@ -173,10 +180,43 @@ function Overview({ an }: { an: Analysis }) {
             <i className="block h-2 w-2 rounded-[2px]" style={{ background: 'var(--strip-warn)' }} /> Everything else
           </span>
         </div>
-        <Why label="How is this worked out?">
-          <p>These are averages from the last {an.summary.windowDays} days of your data, as a monthly figure. Moves between your own accounts aren’t counted.</p>
-        </Why>
+        <Explain
+          label="How is this worked out?"
+          means="What a normal month looks like for you: money coming in, money going out, and what it goes on."
+          from={`Averages from the last ${an.summary.windowDays} days of ${estimated ? 'your answers, so they’re estimates' : 'your bank statement'}, as a monthly figure. Moves between your own accounts aren’t counted.`}
+          todo="If something is in the wrong category, open Transactions and tap it to change it."
+        />
       </Card>
+
+      {recent.length > 0 && (
+        <Card>
+          <SectionTitle
+            action={
+              <button type="button" className="flex items-center text-sm font-medium text-link" onClick={onSeeAll}>
+                See all <ChevronRight size={16} aria-hidden />
+              </button>
+            }
+          >
+            Recent transactions
+          </SectionTitle>
+          <div className="mt-1 divide-y divide-hair">
+            {recent.map((t) => (
+              <Row
+                key={t.id}
+                icon={<CategoryIcon category={t.category} />}
+                title={merchantLabel(t.description)}
+                sub={`${CATEGORY_LABEL[t.category]} · ${shortDate(t.date)}`}
+                right={
+                  <span className={t.amount > 0 ? 'text-good' : ''}>
+                    {t.amount > 0 ? '+' : ''}
+                    {gbp(t.amount, 2)}
+                  </span>
+                }
+              />
+            ))}
+          </div>
+        </Card>
+      )}
 
       {trends.length > 0 && trends[0].months.length > 1 && (
         <Card>
@@ -243,7 +283,8 @@ function Overview({ an }: { an: Analysis }) {
 
       {an.recurring.length > 0 && (
         <Card>
-          <SectionTitle>Regular bills and income</SectionTitle>
+          <SectionTitle>Regular payments</SectionTitle>
+          <Muted className="mt-0.5">Bills and income that repeat, spotted in your transactions.</Muted>
           <div className="mt-1 divide-y divide-hair">
             {an.recurring.map((r) => (
               <Row key={r.key} icon={<CategoryIcon category={r.category} />} title={r.label} sub={cadenceLabel(r)} right={<span className={r.direction === 'in' ? 'text-good' : ''}>{r.direction === 'in' ? '+' : '−'}{gbp(r.last, 2)}</span>} />
@@ -257,7 +298,7 @@ function Overview({ an }: { an: Analysis }) {
 
       {!an.gaps.income && (
         <Card>
-          <SectionTitle>Your money strengths</SectionTitle>
+          <SectionTitle>Staying on top of your money</SectionTitle>
           <Muted className="mb-3 mt-0.5">Scored 0 to 100, and for you only. These are never used for credit or pricing.</Muted>
           <ScoreBars dims={an.fingerprint} />
           <div className="mt-4 space-y-2">
@@ -281,7 +322,7 @@ export default function Spending() {
   if (!money) return <NoProfile />;
   return (
     <div className="space-y-3">
-      <TopBar title="Spending" />
+      <TopBar title="Spending" subtitle="Where your money comes from and where it goes." />
       <Segmented
         label="Spending view"
         value={view}
@@ -291,7 +332,7 @@ export default function Spending() {
           { id: 'transactions', label: 'Transactions' },
         ]}
       />
-      {view === 'overview' ? <Overview an={money.an} /> : <Transactions an={money.an} estimated={money.profile.estimated} />}
+      {view === 'overview' ? <Overview an={money.an} estimated={money.profile.estimated} onSeeAll={() => setView('transactions')} /> : <Transactions an={money.an} estimated={money.profile.estimated} />}
     </div>
   );
 }

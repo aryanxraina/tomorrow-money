@@ -16,7 +16,7 @@ export default function Subscriptions() {
 
   return (
     <div className="space-y-3">
-      <TopBar title="Subscriptions" back="/more" />
+      <TopBar title="Regular payments" back="/more" subtitle="Subscriptions and other things you pay for regularly." />
       {subs.length > 0 && (
         <Card>
           <div className="text-sm text-mut">You pay about</div>

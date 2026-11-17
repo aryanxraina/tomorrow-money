@@ -1,6 +1,8 @@
 'use client';
 
-import { BookOpen, Download, FileSpreadsheet, MapPin, MessagesSquare, Pencil, Repeat, Trash2 } from 'lucide-react';
+import { BookOpen, CalendarClock, Camera, Download, FileSpreadsheet, MapPin, MessageCircle, MessagesSquare, Pencil, Repeat, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { AccountCard } from '@/components/Account';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Button, Card, Muted, Row, SectionTitle, Segmented, Switch, TopBar, Why } from '@/components/ui';
@@ -8,6 +10,15 @@ import { todayISO } from '@/lib/engine/dates';
 import { useAiStatus } from '@/lib/hooks';
 import { downloadFile } from '@/lib/ics';
 import { personData, useStore, type ThemeChoice } from '@/lib/store';
+
+const TOOLS = [
+  { href: '/ask', title: 'Ask Tomorrow', sub: 'Ask questions about your money', icon: MessageCircle, tone: 'var(--lime)', ink: 'var(--lime-ink)' },
+  { href: '/snap', title: 'Scan a receipt', sub: 'Record what you bought', icon: Camera, tone: 'var(--hero)', ink: 'var(--hero-ink)' },
+  { href: '/nearby', title: 'Find nearby services', sub: 'Cash machines, Post Offices, food banks', icon: MapPin, tone: 'var(--strip-good)', ink: '#fff' },
+  { href: '/community', title: 'What people are saying', sub: 'Real conversations about money', icon: MessagesSquare, tone: 'var(--strip-warn)', ink: 'var(--lime-ink)' },
+  { href: '/learn', title: 'Learn about money', sub: 'Simple guides, starting with investing', icon: BookOpen, tone: 'var(--link)', ink: 'var(--card)' },
+  { href: '/reminders', title: 'Calendar reminders', sub: 'Bill reminders on your phone', icon: CalendarClock, tone: 'var(--chart-plan)', ink: 'var(--card)' },
+];
 
 function csvCell(s: string | number) {
   const text = String(s);
@@ -37,16 +48,35 @@ export default function More() {
 
   return (
     <div className="space-y-3">
-      <TopBar title="More" back="/home" settings={false} />
+      <TopBar title="More tools and services" back="/home" settings={false} subtitle="Everything else Tomorrow can help with, in one place." />
+
+      <div className="span-all grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+        {TOOLS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <Link key={t.href} href={t.href} className="tool-tile block">
+              <div className="ui-card flex h-full flex-col gap-2 rounded-[22px] bg-card p-3.5">
+                <span className="grid h-11 w-11 place-items-center rounded-2xl" style={{ background: t.tone, color: t.ink }}>
+                  <Icon size={22} aria-hidden />
+                </span>
+                <span className="font-semibold leading-snug">{t.title}</span>
+                <span className="text-[13px] leading-snug text-mut">{t.sub}</span>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
 
       <Card className="!py-2">
+        <div className="pt-1.5 font-semibold">Your money data</div>
         <Row icon={<FileSpreadsheet size={20} aria-hidden />} title="Statements and transactions" sub="Add a statement or correct a category" href="/spending?view=transactions" />
-        <Row icon={<Repeat size={20} aria-hidden />} title="Subscriptions" sub="What you pay for regularly" href="/subscriptions" />
-        <Row icon={<MapPin size={20} aria-hidden />} title="Nearby" sub="Free cash machines, advice and food banks" href="/nearby" />
-        <Row icon={<MessagesSquare size={20} aria-hidden />} title="Community Pulse" sub="Money problems on Reddit, YouTube and in the news" href="/community" />
-        <Row icon={<BookOpen size={20} aria-hidden />} title="Learn about investing" sub="When it makes sense, and how it works" href="/learn" />
+        <Row icon={<Repeat size={20} aria-hidden />} title="Regular payments" sub="Subscriptions and what you pay for regularly" href="/subscriptions" />
         <Row icon={<Pencil size={20} aria-hidden />} title="Your details" sub="See and change your answers" href="/details" />
       </Card>
+
+      <h2 className="px-1 pt-1 font-display text-[20px] font-semibold tracking-tight">Settings</h2>
+
+      <AccountCard />
 
       <Card className="space-y-4">
         <SectionTitle>Appearance</SectionTitle>

@@ -180,7 +180,7 @@ export const QUESTIONS: Question[] = [
     write: (v) => ({ debts: v as DebtType[] }),
   },
   money('debtRepayMonthly', 'How much do you repay on debts a month?', 'Without this, your forecast may look better than it really is.', (c) => c.estimated && c.a.debts.length > 0),
-  money('savings', 'How much do you have in savings you could use in an emergency?', 'Savings count towards your safe days.', always),
+  money('savings', 'How much do you have in savings you could use in an emergency?', 'Savings count towards how long your money could last.', always),
   {
     id: 'barriers',
     title: 'Do any of these apply to you?',
